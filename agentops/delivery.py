@@ -18,6 +18,7 @@ from .delivery_azure import BlobJournal, Foundry, ensure, project_shape
 from .delivery_contracts import TOOL_NAME, endpoint, load, release, save
 from .delivery_evaluation import grade
 from .delivery_knowledge import MCP_API, acquire_source, materialize, verify_knowledge
+from .delivery_native import NativeDelivery, NativeRuntime
 
 REPO = "duongthaiha/lab-foundry-agentops"
 
@@ -201,6 +202,7 @@ def matrix() -> dict:
             "iq_mcp": "adapter-implemented-not-live-validated",
             "distinct_mcp_tool": "adapter-implemented-not-live-validated",
             "native_controller": "contract-tested-not-wired-to-live-operator",
+            "native_consumer": "sdk-wire-tested-protected-command-disabled",
             "native_serving_cutover": "unfulfilled",
             "native_rollback": "unfulfilled",
             "memory": "unsupported-no-substitute" if runtime == "harness" else "unfulfilled",
@@ -223,13 +225,18 @@ def parser():
     prepare.add_argument("--negative", action="store_true")
     commands.add_parser("readiness", help="Read GitHub controls only; never opens the live gate")
     commands.add_parser("matrix")
-    action = commands.add_parser("probe", help="Protected real IQ/MCP dependency probe, not promotion")
-    action.add_argument("--bundle", type=Path, required=True)
-    action.add_argument("--digest", required=True)
-    action.add_argument("--target", type=Path, required=True)
-    action.add_argument("--environment", choices=ENVIRONMENTS, required=True)
-    action.add_argument("--sources", type=Path, required=True)
-    action.add_argument("--approved-run-id", required=True)
+    for name, help_text in (
+        ("probe", "Protected real IQ/MCP dependency probe, not promotion"),
+        ("verify-serving", "Protected native consumer diagnostic, not release validation"),
+    ):
+        action = commands.add_parser(name, help=help_text)
+        action.add_argument("--bundle", type=Path, required=True)
+        action.add_argument("--digest", required=True)
+        action.add_argument("--target", type=Path, required=True)
+        action.add_argument("--environment", choices=ENVIRONMENTS, required=True)
+        if name == "probe":
+            action.add_argument("--sources", type=Path, required=True)
+        action.add_argument("--approved-run-id", required=True)
     return result
 
 
@@ -256,13 +263,18 @@ def main() -> int:
             value = load(args.bundle, args.digest)
             target = read_json(args.target)
             validate_target(target, args.environment)
-            _, pages = acquire_source(args.sources, value["source"]["sha256"])
             from azure.identity import AzureCliCredential
             with AzureCliCredential() as credential:
                 foundry = Foundry(target, credential)
                 try:
-                    result = probe(value, args.digest, foundry,
-                                   BlobJournal(target["storage_endpoint"], credential), pages, gate)
+                    journal = BlobJournal(target["storage_endpoint"], credential)
+                    if args.command == "verify-serving":
+                        result = NativeDelivery(
+                            NativeRuntime(foundry, journal.check), journal, None, args.environment,
+                        ).verify_serving(value, args.digest)
+                    else:
+                        _, pages = acquire_source(args.sources, value["source"]["sha256"])
+                        result = probe(value, args.digest, foundry, journal, pages, gate)
                 finally:
                     foundry.close()
         sys.stdout.write(canonical(result).decode())

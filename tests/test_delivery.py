@@ -1,4 +1,5 @@
 import copy
+import io
 import tempfile
 import unittest
 from pathlib import Path
@@ -6,7 +7,7 @@ from unittest.mock import Mock, patch
 
 from azure.ai.projects.models import PromptAgentDefinition
 from agentops.contracts import LabError, canonical, fingerprint, parse_json
-from agentops.delivery import connections, controls, definition, matrix, require_live_gate, validate_target, verify_source_revision
+from agentops.delivery import connections, controls, definition, main, matrix, require_live_gate, validate_target, verify_source_revision
 from agentops.delivery_azure import project_shape
 from agentops.delivery_contracts import FEATURE, TOOL_NAME, load, release, save
 from agentops.delivery_evaluation import grade
@@ -203,3 +204,18 @@ class DeliveryTests(unittest.TestCase):
         self.assertFalse(result["live_ready"])
         self.assertTrue(all(row["main_only"] and not row["admin_bypass"]
                             for row in result["environments"].values()))
+
+    def test_native_consumer_cli_is_gated_before_artifacts_or_authentication(self):
+        argv = ["agentops.delivery", "verify-serving", "--bundle", "not-read.json",
+                "--digest", "a" * 64, "--target", "not-read-target.json",
+                "--environment", "dev", "--approved-run-id", "123"]
+        for gate in ({"platform_controls_ready": False}, {"platform_controls_ready": True}):
+            output = io.StringIO()
+            with patch("sys.argv", argv), patch("sys.stderr", output), \
+                    patch("agentops.delivery.controls", return_value=gate), \
+                    patch("agentops.delivery.load") as load_bundle, \
+                    patch("azure.identity.AzureCliCredential") as credential:
+                self.assertEqual(main(), 1)
+            self.assertEqual(parse_json(output.getvalue())["status"], "error")
+            load_bundle.assert_not_called()
+            credential.assert_not_called()

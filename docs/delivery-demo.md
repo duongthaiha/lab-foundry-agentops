@@ -2,10 +2,22 @@
 
 **This is not a completed live demo.** The new operator prepares real portable
 intent and checks current controls. SDK adapters are implemented but not
-Azure-validated. `probe` deliberately cannot execute, even if platform gates are
+Azure-validated. `probe` and `verify-serving` deliberately cannot execute, even if platform gates are
 later restored: runtime, identity, cost, safety and operation-specific approval
 preflight still require implementation and review. There is no new live workflow,
 credential grant, approval submission or automatic provisioning.
+
+`verify-serving` is now wired to the native consumer diagnostic, not to
+promotion or grading. Its CLI accepts `--bundle`, `--digest`, `--target`,
+`--environment` and `--approved-run-id`. Like `probe`, it fails at the live
+preflight **before reading artifacts or creating Azure credentials**. A run-ID
+argument does not authorize execution. If later enabled through reviewed
+preflight, it records a real stable-endpoint observation under the shared
+journal lease, without creating an agent version or changing its selector.
+It explicitly reports `release_validated=false` and `full_gate_passed=false`:
+the provided bundle supplies the diagnostic question and operation correlation,
+not proof that its release is serving. A successful diagnostic cannot create a
+candidate or promotion receipt. Remaining lifecycle commands are not wired.
 
 ## Run the usable milestone
 
@@ -108,6 +120,22 @@ from a completed model response.
 regular candidate reconciliation, version-reference requests, explicit Hosted
 version-bound session activation and owned-session drain. Native identity must
 be active and the agent enabled. Each mutating SDK call checks the writer lease.
+Its concrete consumer check calls the agent-specific endpoint with a fresh
+conversation and **no version, model, prior response or session override**.
+The controller invokes it before candidate creation, while the candidate is
+isolated, after native cutover, and after rollback. It requires the returned
+service response to identify the selected version and checks for selector and
+control-plane identity drift. This replaces the earlier caller-supplied
+consumer callback; copying a selector snapshot cannot satisfy the check.
+Hosted consumer requests use the documented automatic conversation-to-session
+binding, then require an active session read-back on the observed version.
+Conversation handles are journaled before invocation; returned Hosted session
+handles are journaled before verification, including failed verification.
+Unknown outcomes without a returned session ID still require reconciliation;
+the controller does not guess or delete sessions it cannot identify.
+Consumer evidence retains IDs and routing observations, not publisher passages
+or model output. Its identity digest comes from the **agent control plane**;
+it does not establish the tool's caller identity or end-user forwarding.
 The controller saves rollback intent **before** changing the selector, so failed
 consumer verification or an uncertain response does not discard the previous
 version. A failed reevaluation invalidates an earlier passing record.
@@ -121,11 +149,14 @@ unrelated serving versions, and restores a retained previous promotion receipt
 when available. These checks coordinate participating writers; they are not a
 service-side compare-and-swap guarantee against portal or administrator changes.
 
-These are library primitives with mocked-service contract coverage, **not a
-wired live operator**. Integration must supply authenticated context inspection,
-grading, upstream observation, and an actual consumer request through the
-serving endpoint **without a version override**. Do not substitute an
-exact-version candidate request for that consumer check. A reviewed baseline
+The delivery lifecycle remains library primitives with mocked-service contract
+coverage, **not an enabled live operator**. Only the serving diagnostic is wired
+to its protected CLI command. Integration must supply authenticated context inspection,
+grading and upstream observation. Consumer requests also have offline coverage
+through the actual Projects/OpenAI SDK authentication and HTTP serialization
+pipeline, but have **not** been executed against Foundry. Include all baseline,
+candidate, serving and rollback calls in the pending total-cost preflight.
+Do not substitute an exact-version candidate request for the consumer check. A reviewed baseline
 must already exist and be explicitly pinned; bootstrap of a new agent is
 immediately serving and is not presented as isolated candidate creation.
 
@@ -182,8 +213,8 @@ does not prove non-serving creation on the actual serving agent.
 |---|---|---|---|
 | Exact candidate while previous version serves | Version-reference request needs live verification | Version-bound session and activation need verification | No verified request-specific candidate override on agent endpoint |
 | Native exact-version cutover and rollback | Controller contract-tested; not live | Controller contract-tested; not live | Controller refuses unverified candidate promotion |
-| Before/during/after runtime identity | SDK boundary checks; not live | SDK boundary checks; not live | SDK boundary checks; not live |
-| Fresh session and old-session behavior | Fresh conversation; not live | Version binding/activation/drain contract-tested | Fresh conversation/endpoint contract-tested; selection unverified |
+| Before/during/after runtime identity | Native consumer/control-plane checks; not live | Native consumer/control-plane checks; not live | Native consumer/control-plane checks; not live |
+| Fresh session and old-session behavior | Override-free consumer contract-tested | Automatic consumer binding and version-bound candidate activation/drain contract-tested | Override-free fresh consumer contract-tested; candidate selection unverified |
 | Native scoped memory/migration/rollback | Native API primitives; migration blocked | Native API primitives; caller wiring/migration blocked | Unsupported; no substitute |
 
 Agent-specific endpoints and fresh conversations are preserved for the harness;

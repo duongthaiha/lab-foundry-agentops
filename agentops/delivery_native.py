@@ -137,6 +137,52 @@ class NativeRuntime:
                 "native_candidate_contract_verified": runtime != "harness",
                 "observed_at": utc_now()}
 
+    def invoke_serving(self, name: str, question: str, operation_digest: str, expected: dict,
+                       on_conversation: Callable[[str], None], on_session: Callable[[dict], None]) -> dict:
+        """Observe the native selector, never request the expected version or an existing session."""
+        digest_value(operation_digest, "operation release digest")
+        before = self.snapshot(name)
+        require(before == expected, "Serving drift before consumer invocation")
+        version = self.foundry.get_version(name, before["version"])
+        runtime = runtime_of(version["definition"])
+        kwargs = {"input": question, "max_output_tokens": 1024,
+                  "metadata": {"operation_release_digest": operation_digest, "verification": "native-serving"}}
+        if runtime == "harness":
+            kwargs["extra_headers"] = {"Foundry-Features": "MicrosoftCopilot=V1Preview"}
+        with self.foundry.client.get_openai_client(agent_name=name, max_retries=0, timeout=60) as client:
+            self.check_write()
+            conversation = client.conversations.create()
+            on_conversation(conversation.id)
+            self.check_write()
+            started = time.monotonic()
+            response = client.responses.create(conversation=conversation.id, **kwargs).model_dump(mode="json")
+            elapsed = time.monotonic() - started
+        reference = response.get("agent_reference")
+        actual_version = reference.get("version") if isinstance(reference, dict) else None
+        session_id = response.get("agent_session_id")
+        if runtime == "hosted" and isinstance(session_id, str) and session_id:
+            # Preserve the returned handle even if subsequent read-back or version checks fail.
+            on_session({"name": name, "version": actual_version, "session_id": session_id})
+        require(response.get("status") == "completed" and isinstance(response.get("id"), str)
+                and response["id"], "Serving response incomplete or missing its service ID")
+        require(isinstance(reference, dict) and reference.get("name") == name
+                and actual_version == before["version"],
+                "Consumer response did not confirm the native serving version")
+        if runtime == "hosted":
+            require(isinstance(session_id, str) and session_id, "Consumer response has no Hosted session binding")
+            session = self.agents.get_session(name, session_id).as_dict()
+            require(session.get("status") == "active" and session.get("agent_session_id") == session_id
+                    and session.get("version_indicator") == {"type": "version_ref", "agent_version": actual_version},
+                    "Consumer Hosted session is not active on the serving version")
+        after = self.snapshot(name)
+        require(after == before, "Serving drift during consumer invocation")
+        return {"version": actual_version, "identity_digest": after["identity_digest"],
+                "identity_source": "agent-control-plane", "route_before": before, "route_after": after,
+                "response_id": response["id"], "conversation_id": conversation.id,
+                "session_id": session_id if runtime == "hosted" else None,
+                "operation_release_digest": operation_digest, "latency_seconds": elapsed,
+                "observed_at": utc_now(), "selection": "native-endpoint-without-override"}
+
     def cutover(self, name: str, version: str, previous: dict) -> dict:
         require(self.snapshot(name) == previous, "Native serving changed before cutover")
         target = self.foundry.get_version(name, version)
@@ -151,6 +197,8 @@ class NativeRuntime:
         return after
 
     def drain_owned_session(self, name: str, session_id: str, version: str) -> None:
+        require(isinstance(version, str) and version.isdigit(),
+                "Unknown owned session version; reconcile before drain")
         try:
             session = self.agents.get_session(name, session_id).as_dict()
         except ResourceNotFoundError:
@@ -174,7 +222,8 @@ class NativeRuntime:
 class NativeDelivery:
     """Participating writers across all environments must share one journal/lease."""
 
-    def __init__(self, runtime: NativeRuntime, journal, inspect_context: Callable[[dict], dict], environment: str):
+    def __init__(self, runtime: NativeRuntime, journal, inspect_context: Callable[[dict], dict] | None,
+                 environment: str):
         require(environment in ENVIRONMENTS, "Unknown delivery environment")
         self.runtime, self.journal, self.inspect_context = runtime, journal, inspect_context
         self.runtime.check_write = self.journal.check
@@ -186,15 +235,56 @@ class NativeDelivery:
         })
 
     def _context(self, definition: dict) -> dict:
+        require(self.inspect_context is not None, "Authenticated context inspection is required for delivery")
         context = self.inspect_context(definition)
         fields(context, {"components_digest", "content_digest", "state_digest", "identity_digest", "policy_digest"})
         for key, value in context.items():
             digest_value(value, key)
         return context
 
+    def _consumer(self, name: str, question: str, digest: str, serving: dict, attempt: dict, state: dict) -> dict:
+        def remember_conversation(conversation_id):
+            attempt.setdefault("consumer_conversations", []).append(conversation_id)
+            self.journal.save(state)
+
+        def remember_session(session):
+            owned = [item["session_id"] for row in self._state(state)["history"]
+                     for item in row.get("owned_sessions", [])]
+            require(session["session_id"] not in owned, "Fresh consumer reused an owned Hosted session")
+            attempt.setdefault("owned_sessions", []).append(session)
+            self.journal.save(state)
+
+        return self.runtime.invoke_serving(name, question, digest, serving, remember_conversation, remember_session)
+
+    def verify_serving(self, bundle: dict, digest: str) -> dict:
+        """A protected consumer diagnostic, not release evaluation or permission to promote."""
+        validate(bundle)
+        require(fingerprint(bundle) == digest, "Release digest mismatch")
+        name = bundle["agent"]
+        with self.journal.locked() as state:
+            native = self._state(state)
+            before = self.runtime.snapshot(name)
+            actual = self.runtime.foundry.get_version(name, before["version"])
+            require(runtime_of(actual["definition"]) == bundle["runtime"], "Serving runtime differs from the release")
+            attempt = {"action": "verify-serving", "operation_release_digest": digest,
+                       "status": "started", "before": before, "started_at": utc_now()}
+            native["history"].append(attempt)
+            self.journal.save(state)
+            try:
+                observed = self._consumer(name, bundle["evaluation"]["questions"][0], digest, before, attempt, state)
+                attempt.update({"status": "serving-verified", "consumer": observed,
+                                "release_validated": False, "full_gate_passed": False, "completed_at": utc_now()})
+                self.journal.save(state)
+                return attempt
+            except Exception as exc:
+                attempt.update({"status": "reconcile-required", "error_type": type(exc).__name__})
+                self.journal.save(state)
+                raise
+
     def evaluate(self, bundle: dict, digest: str, definition: dict, evaluator: Callable[[dict], dict]) -> dict:
         validate(bundle)
         require(fingerprint(bundle) == digest, "Release digest mismatch")
+        require(runtime_of(definition) == bundle["runtime"], "Candidate runtime differs from the release")
         name = bundle["agent"]
         with self.journal.locked() as state:
             native = self._state(state)
@@ -208,6 +298,9 @@ class NativeDelivery:
             native["history"].append(attempt)
             self.journal.save(state)
             try:
+                attempt["consumer_before"] = self._consumer(
+                    name, bundle["evaluation"]["questions"][0], digest, before, attempt, state)
+                self.journal.save(state)
                 version = self.runtime.candidate(
                     name, definition, {"release_digest": digest, "purpose": "candidate"}, before)
                 self.journal.check()
@@ -217,6 +310,9 @@ class NativeDelivery:
                 observations = [self.runtime.invoke_version(
                     name, version["version"], bundle["runtime"], question, digest, before, remember_session)
                     for question in bundle["evaluation"]["questions"]]
+                attempt["consumer_during"] = self._consumer(
+                    name, bundle["evaluation"]["questions"][0], digest, before, attempt, state)
+                self.journal.save(state)
                 self.journal.check()
                 grades = [evaluator(item) for item in observations]
                 require(self._context(definition) == context, "Dependency/content/state context changed during evaluation")
@@ -228,6 +324,8 @@ class NativeDelivery:
                           "definition": definition, "previous_definition": previous_definition,
                           "previous_context": previous_context,
                           "context": context, "before": before, "after": after,
+                          "consumer_question": bundle["evaluation"]["questions"][0],
+                          "consumer_before": attempt["consumer_before"], "consumer_during": attempt["consumer_during"],
                           "evaluated_at": utc_now(), "grades": grades,
                           "passed": all(item.get("full_gate_passed") is True for item in grades)
                           and all(item["native_candidate_contract_verified"] for item in observations),
@@ -244,8 +342,7 @@ class NativeDelivery:
                 self.journal.save(state)
                 raise
 
-    def promote(self, digest: str, serving_check: Callable[[dict], dict],
-                upstream_check: Callable[[str, dict], dict]) -> dict:
+    def promote(self, digest: str, upstream_check: Callable[[str, dict], dict]) -> dict:
         with self.journal.locked() as state:
             native = self._state(state)
             candidate = native["candidates"][digest]
@@ -279,16 +376,15 @@ class NativeDelivery:
                 "previous_context": candidate["previous_context"],
                 "previous_definition": candidate["previous_definition"],
                 "current_context": candidate["context"], "current_definition": candidate["definition"],
+                "consumer_question": candidate["consumer_question"],
                 "release_digest": digest, "previous_receipt": native["serving"].get(candidate["name"]),
             }
             self.journal.save(state)
             try:
                 after = self.runtime.cutover(candidate["name"], candidate["version"], candidate["before"])
                 self.journal.check()
-                observed = serving_check({**candidate, "serving": after})
-                require(observed.get("version") == candidate["version"]
-                        and observed.get("identity_digest") == after["identity_digest"],
-                        "Consumer did not confirm the selected version and identity")
+                observed = self._consumer(candidate["name"], candidate["consumer_question"],
+                                          digest, after, attempt, state)
                 require(self._context(candidate["definition"]) == candidate["context"], "Context changed during cutover")
                 attempt.update({"status": "promoted", "after": after, "consumer": observed})
                 native["serving"][candidate["name"]] = attempt
@@ -300,7 +396,7 @@ class NativeDelivery:
                 self.journal.save(state)
                 raise
 
-    def rollback(self, name: str, serving_check: Callable[[dict], dict]) -> dict:
+    def rollback(self, name: str) -> dict:
         with self.journal.locked() as state:
             native = self._state(state)
             retained = native["retained"][name]
@@ -318,9 +414,8 @@ class NativeDelivery:
                 after = before if before["version"] == retained["previous"]["version"] else self.runtime.cutover(
                     name, retained["previous"]["version"], before)
                 self.journal.check()
-                observed = serving_check({"name": name, "serving": after})
-                require(observed.get("version") == after["version"]
-                        and observed.get("identity_digest") == after["identity_digest"], "Rollback consumer mismatch")
+                observed = self._consumer(name, retained["consumer_question"],
+                                          retained["release_digest"], after, attempt, state)
                 require(self._context(retained["previous_definition"]) == retained["previous_context"],
                         "Retained context changed during rollback")
                 if retained["previous_receipt"] is not None:
