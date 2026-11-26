@@ -155,13 +155,16 @@ def verify_ci_identity(credential, binding: dict) -> None:
             f"https://login.microsoftonline.com/{tenant}/v2.0")
         suffix = "" if version == "1.0" else "/v2.0"
         keys = jwt.PyJWKClient(f"https://login.microsoftonline.com/{tenant}/discovery{suffix}/keys", timeout=10)
+        # Azure CLI tokens requested by azure-identity carry the resource without a trailing slash.
         claims = jwt.decode(
             token, keys.get_signing_key_from_jwt(token).key, algorithms=["RS256"], issuer=issuer,
-            audience=["https://management.azure.com/", "https://management.core.windows.net/"],
+            audience=["https://management.azure.com", "https://management.azure.com/",
+                      "https://management.core.windows.net/"],
             options={"require": ["exp", "iat", "nbf", "tid", "oid", "ver"]},
         )
     except jwt.PyJWTError as exc:
-        raise LabError("Dev CI identity token could not be verified") from exc
+        # PyJWT class names are non-secret and distinguish audience, issuer, signature and expiry failures.
+        raise LabError(f"Dev CI identity token could not be verified ({type(exc).__name__})") from exc
     require(claims["tid"] == tenant and claims.get("appid" if version == "1.0" else "azp") == binding["client_id"]
             and "scp" not in claims, "Only the reviewed application identity may execute dev smoke")
 
