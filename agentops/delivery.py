@@ -22,6 +22,7 @@ from .delivery_knowledge import MCP_API, acquire_source, materialize, verify_kno
 from .delivery_native import NativeDelivery, NativeRuntime
 
 REPO = "duongthaiha/lab-foundry-agentops"
+CONNECTION_API = "2025-10-01-preview"
 
 
 def verify_source_revision(revision: str) -> None:
@@ -112,7 +113,7 @@ def connections(foundry, digest: str, knowledge: dict) -> list[dict]:
         ("lab-tools", target["tool_mcp_url"] + f"/releases/{digest}", target["tool_audience"], TOOL_NAME),
     ):
         connection = f"{label}-{digest[:20]}"
-        path = target["project_resource_id"] + f"/connections/{connection}?api-version=2025-10-01-preview"
+        path = target["project_resource_id"] + f"/connections/{connection}?api-version={CONNECTION_API}"
         desired = {"properties": {
             "authType": "ProjectManagedIdentity", "category": "RemoteTool", "target": url,
             "isSharedToAll": True, "audience": audience, "metadata": {"ApiType": "Azure"},
