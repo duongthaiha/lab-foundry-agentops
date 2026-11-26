@@ -138,11 +138,19 @@ automatic runtime memory wiring is claimed.
 
 Extraction sends explicit `type: message`, preserves the raw service completion
 status/usage rather than the SDK's synthesized zero-usage fallback, and waits at
-most five minutes. The caller must durably journal the start and opaque SDK
-continuation before waiting. Keep that continuation in the private journal only.
-A timeout does **not** cancel the remote update: block subsequent writes until
-the pending operation is reconciled. Automatic resumption and cross-writer
-quiescence of runtime memory writes are not implemented.
+most five minutes. `MemoryDelivery` durably journals the start and native
+update ID before waiting; it does not deserialize opaque continuation tokens.
+A timeout does **not** cancel the remote update. The coordinator blocks another
+extraction or deletion until an authenticated read of that operation reports
+a terminal outcome. Reconciliation uses the same `api-version=v1` status route
+as the pinned SDK, checks the returned update ID, and never replays extraction.
+The real SDK authentication/URL pipeline and redirect refusal are exercised
+offline at the HTTP boundary.
+
+A missing update ID, superseded operation, or uncertain deletion remains blocked
+for explicit reconciliation rather than guessing or retrying. These controls
+cover participating writers only; quiescence of automatic runtime memory writes
+and Hosted caller forwarding remain unverified.
 
 Nonempty memory migration is explicitly blocked: native `create_memory` exposes
 no original timestamp/expiry parameter, so replay could extend retention or

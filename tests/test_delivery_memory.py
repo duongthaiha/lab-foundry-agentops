@@ -1,12 +1,16 @@
 import unittest
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
+from azure.ai.projects import AIProjectClient
 from azure.ai.projects.models import MemorySearchPreviewTool
-from azure.core.exceptions import ResourceNotFoundError
+from azure.core.credentials import AccessToken
+from azure.core.exceptions import ResourceNotFoundError, TooManyRedirectsError
+from requests import Response
 
-from agentops.contracts import LabError
-from agentops.delivery_memory import NativeMemory
+from agentops.contracts import LabError, canonical
+from agentops.delivery_memory import MemoryDelivery, NativeMemory
+from test_delivery_native import Journal
 
 OID = "aaaaaaaa-0000-0000-0000-aaaaaaaaaaaa"
 OTHER = "bbbbbbbb-0000-0000-0000-bbbbbbbbbbbb"
@@ -54,6 +58,7 @@ class NativeMemoryTests(unittest.TestCase):
     def test_incomplete_async_update_is_not_success_or_replayed(self):
         memory, api = self.memory()
         poller = api.begin_update_memories.return_value
+        poller.update_id = "update-1"
         poller.done.return_value = False
         with self.assertRaisesRegex(LabError, "five minutes"):
             memory.learn_fixture(Mock())
@@ -67,11 +72,11 @@ class NativeMemoryTests(unittest.TestCase):
         api.list_memories.side_effect = [[], [model(item)]]
         result = {"status": "completed", "update_id": "update-1",
                   "result": {"memory_operations": [{"kind": "create", "memory_item": item}],
-                             "usage": {"input_tokens": 10, "output_tokens": 3}}}
+                             "usage": {"embedding_tokens": 2, "input_tokens": 10, "output_tokens": 3, "total_tokens": 15}}}
         poller = api.begin_update_memories.return_value
         poller.done.return_value = True
         poller.result.return_value = result
-        poller.continuation_token.return_value = "private-opaque-continuation"
+        poller.update_id = "update-1"
         journal = Mock()
         measured = memory.learn_fixture(journal)
         self.assertEqual(measured["usage"], result["result"]["usage"])
@@ -79,8 +84,87 @@ class NativeMemoryTests(unittest.TestCase):
         self.assertEqual(args["items"][0]["type"], "message")
         raw = SimpleNamespace(http_response=SimpleNamespace(json=lambda: {"status": "failed"}))
         self.assertEqual(args["cls"](raw, model({"usage": {"input_tokens": 0}}), {}), {"status": "failed"})
-        self.assertEqual(journal.call_args_list[1].args[0]["continuation_token"], "private-opaque-continuation")
+        self.assertEqual(journal.call_args_list[1].args[0]["update_id"], "update-1")
         self.assertNotIn("continuation", str(measured))
+
+    def test_completion_from_another_operation_is_rejected(self):
+        memory, api = self.memory()
+        poller = api.begin_update_memories.return_value
+        poller.update_id, poller.done.return_value = "update-1", True
+        poller.result.return_value = {"update_id": "another-update", "status": "completed"}
+        with self.assertRaisesRegex(LabError, "another operation"):
+            memory.learn_fixture(Mock())
+
+    def test_status_reconciliation_is_authenticated_get_not_a_replayed_extraction(self):
+        memory, api = self.memory()
+        response = memory.project.send_request.return_value
+        response.status_code = 200
+        response.json.return_value = {"update_id": "update-1", "status": "in_progress"}
+        self.assertEqual(memory.read_update("update-1")["status"], "in_progress")
+        request = memory.project.send_request.call_args.args[0]
+        self.assertEqual(request.method, "GET")
+        self.assertEqual(request.url, "{endpoint}/memory_stores/contoso-memory-v1/updates/update-1?api-version=v1")
+        response.close.assert_called_once()
+        api.begin_update_memories.assert_not_called()
+        with self.assertRaisesRegex(LabError, "Invalid native update"):
+            memory.read_update("../another-scope")
+
+    def test_real_sdk_routes_status_read_and_refuses_redirect(self):
+        response = Response()
+        response.status_code = 200
+        response.headers["Content-Type"] = "application/json"
+        response.raw = Mock()
+        response._content = canonical({"update_id": "update-1", "status": "in_progress"})
+        response._content_consumed = True
+        credential = SimpleNamespace(get_token=lambda *args, **kwargs: AccessToken("offline-test-token", 9999999999))
+        endpoint = "https://unit.services.ai.azure.com/api/projects/lab"
+        with AIProjectClient(endpoint, credential, allow_preview=True) as client, \
+                patch("requests.Session.request", return_value=response) as wire:
+            memory = NativeMemory(client, "prompt", "contoso-memory-v1", OID, {OID}, lambda: None)
+            self.assertEqual(memory.read_update("update-1")["status"], "in_progress")
+            self.assertEqual(wire.call_args.args[1],
+                             endpoint + "/memory_stores/contoso-memory-v1/updates/update-1?api-version=v1")
+            self.assertEqual(wire.call_args.kwargs["headers"]["Authorization"], "Bearer offline-test-token")
+            self.assertEqual(wire.call_args.kwargs["headers"]["Foundry-Features"], "MemoryStores=V1Preview")
+            response.status_code = 302
+            response.headers["Location"] = "https://foreign.invalid/"
+            wire.reset_mock()
+            with self.assertRaises(TooManyRedirectsError):
+                memory.read_update("update-1")
+            self.assertEqual(wire.call_count, 1)
+
+    def test_pending_extraction_blocks_replay_and_deletion_until_reconciled(self):
+        memory, api = self.memory()
+        journal = Journal()
+        workflow = MemoryDelivery(memory, journal, "dev")
+        poller = api.begin_update_memories.return_value
+        poller.update_id, poller.done.return_value = "update-1", False
+        with self.assertRaisesRegex(LabError, "five minutes"):
+            workflow.learn()
+        for action in (workflow.learn, workflow.forget):
+            with self.assertRaisesRegex(LabError, "Pending"):
+                action()
+        self.assertEqual(api.begin_update_memories.call_count, 1)
+        api.delete_scope.assert_not_called()
+        response = memory.project.send_request.return_value
+        response.status_code = 200
+        response.json.return_value = {"update_id": "update-1", "status": "failed", "error": {"code": "test-failure"}}
+        self.assertEqual(workflow.reconcile()["status"], "failed")
+        api.delete_scope.return_value = model({"deleted": True, "scope": OID, "name": memory.store})
+        self.assertEqual(workflow.forget()["status"], "forgotten")
+        self.assertEqual(api.begin_update_memories.call_count, 1)
+
+    def test_uncertain_deletion_blocks_new_writes(self):
+        memory, api = self.memory()
+        workflow = MemoryDelivery(memory, Journal(), "dev")
+        api.delete_scope.side_effect = TimeoutError("unknown deletion outcome")
+        with self.assertRaises(TimeoutError):
+            workflow.forget()
+        with self.assertRaisesRegex(LabError, "Pending"):
+            workflow.learn()
+        with self.assertRaisesRegex(LabError, "quiescence"):
+            workflow.reconcile()
+        api.begin_update_memories.assert_not_called()
 
     def test_nonempty_ttl_migration_is_explicitly_blocked_without_copying(self):
         memory, api = self.memory()
