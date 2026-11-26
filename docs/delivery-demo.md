@@ -5,7 +5,11 @@ intent and checks current controls. SDK adapters are implemented but not
 Azure-validated. `probe` and `verify-serving` deliberately cannot execute, even if platform gates are
 later restored: runtime, identity, cost, safety and operation-specific approval
 preflight still require implementation and review. There is no new live workflow,
-credential grant, approval submission or automatic provisioning.
+credential grant, approval submission or automatic provisioning in that path.
+The separate [dev-only unattended smoke](dev-smoke.md) is now implemented,
+including an authenticated, response-bound model judge. It does not use or weaken
+these full-delivery gates, remains off pending scoped foundation authorization,
+and does not resolve the nine-cell native-promotion acceptance criteria.
 
 `verify-serving` is now wired to the native consumer diagnostic, not to
 promotion or grading. Its CLI accepts `--bundle`, `--digest`, `--target`,
@@ -173,7 +177,7 @@ unrelated serving versions, and restores a retained previous promotion receipt
 when available. These checks coordinate participating writers; they are not a
 service-side compare-and-swap guarantee against portal or administrator changes.
 
-The delivery lifecycle remains library primitives with mocked-service contract
+The full delivery lifecycle remains library primitives with mocked-service contract
 coverage, **not an enabled live operator**. Only the serving diagnostic is wired
 to its protected CLI command. Integration must supply authenticated context inspection,
 grading and upstream observation. Consumer requests also have offline coverage

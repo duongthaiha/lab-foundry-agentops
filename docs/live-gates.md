@@ -1,6 +1,10 @@
 # Live execution, cost and teardown gates
 
-**Current state: dry-run only; reviewer control temporarily deferred.**
+**Current state: no live deployment; reviewer control temporarily deferred.**
+The reviewed design now permits a separate [dev-only unattended prompt smoke](dev-smoke.md)
+without a reviewer per run, but its foundation/identity/cost authorization and
+enablement have not occurred. This exception does not open platform, test,
+labprod or full agent promotion.
 Foundry dependency setup and its hosted/harness environment preflight completed
 after renewed user approval. Fresh ARM and azd authentication succeeded; no
 relogin was required. No billable lab resources were created. A secretless
@@ -25,7 +29,7 @@ groups were then independently verified empty. No pending approval was submitted
 The separate `simulated-rehearsal.yml` contains no cloud login, environment
 binding or `id-token: write`; its placeholder permits synthetic work only.
 
-### Restore before live use
+### Restore before general live use
 
 1. Keep `platform.yml` disabled and `LIVE_PLATFORM_ENABLED=false`. Inventory every
    workflow with cloud credentials or OIDC permissions and all queued, waiting
@@ -50,9 +54,10 @@ binding or `id-token: write`; its placeholder permits synthetic work only.
    approve the particular run. Recheck actual allowed/denied identity actions.
    Any unexpected execution or failed read-back closes both live switches again.
 
-The same restoration is required before introducing future dev/test/labprod
-agent-delivery jobs. Their identities, runtime tests and deployment evidence
-remain unimplemented. Raw before/after settings and scoped bootstrap/teardown
+The same restoration is required for general dev/test/labprod
+agent-delivery jobs. Only the bounded dev smoke has an explicit alternate,
+expiring unattended policy; it cannot provide full promotion authorization.
+Raw before/after settings and scoped bootstrap/teardown
 IDs stay in ignored `.lab/` evidence, never the public repository.
 
 ## Confirmed configuration and observed preflight
@@ -92,8 +97,8 @@ Read-only checks on 2026-11-25 observed:
   `@duongthaiha`, admin bypass disabled, self-review allowed by the single-owner
   lab decision, and deployment branch `main` only.
 
-The later temporary reviewer deferral above supersedes the original requirement
-only for this dry-run phase. Before OIDC/live
+The temporary reviewer deferral and the narrow dev smoke exception above supersede
+the original requirement only within their stated scopes. Before general OIDC/live
 delivery, restore and read back the rules and verify reviewed deployment jobs reference
 the correct environment. Do not issue credentials to PR code or widen trust to
 arbitrary branches. CODEOWNERS is not a substitute. Because both lab roles have
@@ -191,8 +196,9 @@ az rest --method get --url "https://management.azure.com/subscriptions/$($config
 
 ## Identity and CI gate
 
-Repository/environment-specific GitHub/Entra OIDC, protected environments and
-named reviewers are required. Separate deployment, component mutation, runtime
+Repository/environment-specific GitHub/Entra OIDC and protected environments are
+required. Named reviewers remain required outside the explicit bounded dev smoke
+exception. Separate deployment, component mutation, runtime
 dependency access, and serving-change authority. Verify allowed and denied
 actions using the actual caller identity at each hop.
 

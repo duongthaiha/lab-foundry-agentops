@@ -36,6 +36,10 @@ no serving endpoint exists. Start with the
 `python -m agentops.delivery prepare`, `readiness`, and `matrix` are usable;
 `probe` is deliberately blocked pending complete preflight and authorization.
 Native serving, rollback and memory acceptance remain unfulfilled.
+The separate [dev-only unattended prompt smoke](docs/dev-smoke.md) now implements
+an expiring, main-only deploy/graded-smoke workflow without requiring a reviewer
+per run. It remains off pending explicit dev infrastructure/identity/cost setup;
+it never authorizes promotion or opens test/production.
 Reviewed platform code is on `main`; a nonbillable,
 secretless OIDC bootstrap and four empty lab groups exist. No live agents or
 billable infrastructure have been deployed.
@@ -44,7 +48,8 @@ billable infrastructure have been deployed.
 requirements. The real platform workflow is disabled and
 `LIVE_PLATFORM_ENABLED=false`; main-only restrictions, disabled admin bypass and
 scoped identity grants remain unchanged. Restore and verify reviewers before
-any live use, following [the restoration checklist](docs/live-gates.md#temporary-reviewer-deferral).
+general live delivery, following [the restoration checklist](docs/live-gates.md#temporary-reviewer-deferral).
+The narrowly scoped dev smoke exception above has its own authorization policy.
 The independent **Simulated approval rehearsal** workflow needs no manual
 approval and has no Azure credentials, environment binding or OIDC permission.
 

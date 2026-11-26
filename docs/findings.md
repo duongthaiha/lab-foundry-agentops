@@ -5,6 +5,10 @@ Local tests exercise controller logic, synthetic state, delivery contracts and
 localhost MCP transport, not Azure runtime behavior. The new
 [three-track delivery milestone](delivery-demo.md) records the public PDF
 fingerprint, implemented adapters and remaining native-serving/safety gates.
+The [bounded dev smoke](dev-smoke.md) adds a main-only unattended workflow,
+read-only foundation preflight, actual prompt-deployment adapter, dual MCP
+evidence checks and a response-bound model judge. Its offline tests are not live
+evidence; no resources or additional permissions were created to execute it.
 The received
 backlog identifies the source as `docs\ai-ml\guide\foundry-agentops.md` with article
 metadata date 2026-08-19; its exact Git revision has not been supplied/verified.
@@ -18,7 +22,7 @@ Do not treat this source map as a line-by-line review of an unread revision.
 | AO-02 | Current regional documentation, model/quota/policy reads, harness-memory boundary | Actual runtime/API entitlement and behavior probes |
 | AO-03 | Package/test/docs layout, approved CODEOWNERS, passing four-platform PR CI | Manual code review and merge |
 | AO-04 | Budget/read-back; Bicep/ARM validation; create-only what-if; names and foundation cost preflight | Protected provisioning, runtime RBAC and repeatability |
-| AO-05 | Reviewed main code; secretless scoped OIDC bootstrap; reviewer control temporarily deferred for dry-run only | Restore reviewers before live enablement; real authorization tests |
+| AO-05 | Scoped platform bootstrap; narrow expiring dev-smoke policy implemented without per-run reviewers | Separate dev identity/foundation authorization; general delivery still needs reviewer restoration |
 | AO-06 | Synthetic Contoso contracts/cases for three tracks | Real agent implementations and measured baselines |
 | AO-07 | Deterministic bundle, change digests, integrity/path checks | Built hosted artifact, full real component provenance |
 | AO-08 | Separate strict synthetic environment bindings | Validated real Azure bindings |
@@ -57,11 +61,11 @@ Do not treat this source map as a line-by-line review of an unread revision.
 | S5 Serving/rollback/canary | Native SDK contract-tested; untested live | Concrete consumers omit version/session overrides before/during/after cutover and rollback; control-plane identity is not tool-caller identity; no service-side CAS or state-rollback proof |
 | S6 Pipeline/coordination | Caveat; controller CI exercised | Blob lease/CAS adapter is not live distributed-contention evidence; uncoordinated runtime/portal writers remain outside the lease |
 | S7 Environment strategy | Caveat; locally exercised | Synthetic scope rejection is not Azure account/network isolation evidence |
-| S8 Evaluation | Caveat; locally exercised | Exact context and thresholds tested with fabricated metrics, not LLM quality |
+| S8 Evaluation | Caveat; locally exercised | Exact thresholds and new response-bound dev model-judge wire contract tested offline; no live grade or calibrated full-quality/safety gate |
 | S9 Tools/toolboxes | Native lifecycle contract-tested; untested live | Version-pinned receipts and read-only default-resolution tests do not prove actual calls, schemas, authorization or shared-consumer effects |
 | S10 Knowledge/Foundry IQ | Untested live | Reuse/ACL/ingestion ordering/content rollback claims remain conditional |
 | S11 Memory | Native API contracts tested; untested live | Scoped extraction/deletion/reconciliation HTTP tests do not establish runtime isolation or expiry; nonempty migration cannot preserve original TTL; harness unsupported with no substitute |
-| S12 Security/identity | Bootstrap verified; live gate deferred | Four scoped grants and secretless federation; reviewer removal is dry-run-only, real workflow disabled |
+| S12 Security/identity | Bootstrap verified; live gate deferred | Existing platform stays disabled; bounded unattended dev-smoke exception is implemented but not enabled or credentialed |
 | S13 Observability | Untested live | Attempt history is not runtime telemetry, monitoring or an alert demonstration |
 | S14 Preview/constraints | Documentation and management plane checked | Selected models/quota observed; runtime/API entitlement still untested |
 
