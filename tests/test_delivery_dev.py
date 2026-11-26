@@ -164,6 +164,22 @@ class DevPolicyTests(unittest.TestCase):
             source.assert_not_called()
             credential.assert_not_called()
 
+    def test_actual_cli_run_requests_tokens_with_tenant_only(self):
+        policy, binding, env = configuration()
+        output = io.StringIO()
+        with patch.dict("os.environ", env, clear=True), patch("sys.argv", ["dev", "run"]), \
+                patch("sys.stderr", output), \
+                patch("agentops.delivery_dev.authorize", return_value=(policy, binding)), \
+                patch("agentops.delivery_dev.verify_source_revision"), \
+                patch("agentops.delivery_dev.acquire_source", return_value=(None, [])), \
+                patch("agentops.delivery_dev.release"), \
+                patch("agentops.delivery_dev.verify_ci_identity", side_effect=LabError("identity stop")), \
+                patch("azure.identity.AzureCliCredential") as credential:
+            self.assertEqual(main(), 1)
+        # `az account get-access-token` fails when given both --tenant and --subscription.
+        credential.assert_called_once_with(tenant_id=binding["tenant_id"])
+        self.assertIn("identity stop", output.getvalue())
+
     def test_resource_preflight_is_read_only_and_refuses_auth_policy_and_size_drift(self):
         _, binding, _ = configuration()
         for mutation in (None, "max-capacity", "auth", "policy", "policy-missing", "policy-duplicate",

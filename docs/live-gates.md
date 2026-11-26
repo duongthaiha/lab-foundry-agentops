@@ -222,7 +222,9 @@ Keep Contributor limited to the four exact groups. The workflow cannot
 create resource groups or write RBAC assignments and must not receive Owner or
 subscription-wide Contributor. Federation must use issuer
 `https://token.actions.githubusercontent.com`, audience `api://AzureADTokenExchange`
-and subject `repo:duongthaiha/lab-foundry-agentops:environment:platform`. Store IDs
+and subject `repo:duongthaiha@2048899/lab-foundry-agentops@1472036346:environment:platform`
+(the repository uses GitHub's immutable OIDC subject; see
+[dev-smoke.md](dev-smoke.md#minimal-live-scope-and-permissions)). Store IDs
 as protected environment configuration. Validate allowed and denied operations.
 
 The environment templates use keyless Foundry/Search/Storage, Basic Search,

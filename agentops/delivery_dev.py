@@ -421,7 +421,9 @@ def main() -> int:
             def reauthorize():
                 current, current_binding = authorize(os.environ)
                 require(current == policy and current_binding == binding, "Dev policy changed during execution")
-            with AzureCliCredential(tenant_id=binding["tenant_id"], subscription=binding["subscription_id"]) as credential:
+            # The Azure CLI rejects --tenant with --subscription on token requests; azure/login selects the
+            # subscription and verify_ci_identity checks the token's tenant and application.
+            with AzureCliCredential(tenant_id=binding["tenant_id"]) as credential:
                 verify_ci_identity(credential, binding)
                 foundry = Foundry(binding["target"], credential)
                 try:

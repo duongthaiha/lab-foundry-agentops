@@ -52,7 +52,11 @@ platform template as an implicit substitute.
 Create a **separate dev delivery app** with no password/certificate, issuer
 `https://token.actions.githubusercontent.com`, audience
 `api://AzureADTokenExchange`, and exact federation subject
-`repo:duongthaiha/lab-foundry-agentops:environment:dev`. No PR/branch wildcard
+`repo:duongthaiha@2048899/lab-foundry-agentops@1472036346:environment:dev`. The
+repository's OIDC subject customization has `use_immutable_subject=true`, so
+GitHub presents owner and repository IDs instead of the plain
+`repo:duongthaiha/lab-foundry-agentops:environment:dev` form; confirm the prefix
+with `gh api repos/<owner>/<repo>/actions/oidc/customization/sub`. No PR/branch wildcard
 federation, Owner, subscription Contributor or role-assignment write permission.
 The deployment identity needs only the actual operations below, with allowed
 and denied access checked before enablement:
