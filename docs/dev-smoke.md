@@ -362,6 +362,22 @@ logs, Foundry project/account/model, and the new dev app/federation/grants.
 Check for other consumers before deleting retained knowledge/connections.
 Delete only these owned resources in dependency order; retain private evidence
 as agreed. Reconcile partially created names recorded in `planned_resources`.
+
+To settle a failed or uncertain attempt, the operator (never CI) first deletes
+its release-local agent and two digest-named connections, then runs:
+
+```powershell
+python -m agentops.delivery_dev reconcile --binding <private binding.json> `
+  --policy-id <policy id> --run-key <run id>-<run attempt> --reason "<short private reason>"
+```
+
+It refuses to run under GitHub Actions, verifies with the operator's Entra login
+that the agent and both connections return 404, and only then records
+`status: reconciled` with `reconciled_from`, `reconciled_at` and the verified
+names. The attempt keeps its usage reservation and still counts against
+`max_runs`; it is never marked `smoke-passed`. Content-addressed knowledge
+(KB/source/index) is reused by later releases and is not deleted here. Export
+the journal before and after.
 Do not delete the whole resource group, shared journal or unrelated budget by
 wildcard, and do not touch the previous platform federation or other environments.
 After the owned resources are gone, remove the `SecurityControl` tag from the dev

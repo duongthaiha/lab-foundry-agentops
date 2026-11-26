@@ -16,7 +16,8 @@ from agentops.contracts import LabError, canonical, fingerprint, parse_json
 from agentops.delivery import REPO
 from agentops.delivery_contracts import FEATURE, MAX_OUTPUT_TOKENS, release
 from agentops.delivery_dev import (
-    JUDGE_SCHEMA, WORKFLOW, authorize, inspect_dev, judge_response, main, run_smoke, verify_ci_identity,
+    JUDGE_SCHEMA, WORKFLOW, authorize, inspect_dev, judge_response, main, reconcile_smoke, run_smoke,
+    verify_ci_identity,
 )
 from agentops.mcp_tool import FIXTURES
 from test_delivery import PRICES, observation
@@ -361,6 +362,56 @@ class DevSmokeTests(unittest.TestCase):
         with self.assertRaisesRegex(LabError, "reconcile before another run"):
             self.execute(setup, "124-1")
         self.assertEqual(setup[3].agents.create_version.call_count, 1)
+
+    def test_reconcile_requires_verified_absence_keeps_usage_and_never_marks_passed(self):
+        setup = smoke_fixture()
+        policy, world, journal, response = setup[0], setup[3], setup[4], setup[5]
+        response["agent_reference"]["version"] = "2"
+        with self.assertRaises(LabError):
+            self.execute(setup)
+        args = (world.foundry, journal, policy["id"], "123-1", "Extra answer key; agent and connections deleted")
+        world.foundry.arm = Mock()
+        world.foundry.arm.request.return_value = {"name": "still-there"}
+        with self.assertRaisesRegex(LabError, "agent still exists"):
+            reconcile_smoke(*args)
+        world.versions.clear()
+        with self.assertRaisesRegex(LabError, "connection still exists"):
+            reconcile_smoke(*args)
+        world.foundry.arm.request.return_value = None
+        for bad in ((world.foundry, journal, policy["id"], "999-1", "x"),
+                    (world.foundry, journal, policy["id"], "123-1", ""),
+                    (world.foundry, journal, policy["id"], "123-1", "line\nbreak")):
+            with self.subTest(bad=bad[3:]), self.assertRaises(LabError):
+                reconcile_smoke(*bad)
+        attempt = reconcile_smoke(*args)
+        self.assertEqual((attempt["status"], attempt["reconciled_from"]), ("reconciled", "reconcile-required"))
+        self.assertEqual(attempt["reserved_usd"], 0.05)
+        self.assertIn("conversation_id", attempt)
+        self.assertFalse(attempt["full_gate_passed"] or attempt["promotion_authorized"])
+        self.assertEqual(attempt["reconciliation"]["verified_absent"]["connections"],
+                         attempt["planned_resources"]["connections"])
+        for call, connection in zip(world.foundry.arm.request.call_args_list[-2:],
+                                    attempt["planned_resources"]["connections"]):
+            self.assertIn(f"/connections/{connection}?", call.args[1])
+            self.assertTrue(call.kwargs["absent_ok"])
+        with self.assertRaisesRegex(LabError, "already settled"):
+            reconcile_smoke(*args)
+        response["agent_reference"]["version"] = "1"
+        self.assertEqual(self.execute(setup, "124-1")[0]["status"], "smoke-passed")
+        # The reconciled attempt still consumed allowance.
+        with self.assertRaisesRegex(LabError, "allowance exhausted"):
+            self.execute(setup, "125-1")
+
+    def test_reconcile_cli_is_operator_only(self):
+        output = io.StringIO()
+        _, _, env = configuration()
+        with patch.dict("os.environ", env, clear=True), patch("sys.stderr", output), \
+                patch("sys.argv", ["dev", "reconcile", "--binding", "b.json", "--policy-id", "p",
+                                   "--run-key", "1-1", "--reason", "r"]), \
+                patch("azure.identity.AzureCliCredential") as credential:
+            self.assertEqual(main(), 1)
+        self.assertIn("operator action", output.getvalue())
+        credential.assert_not_called()
 
     def test_smoke_sdk_uses_fresh_conversation_pinned_endpoint_and_two_call_limit(self):
         setup = smoke_fixture()

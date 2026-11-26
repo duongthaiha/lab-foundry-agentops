@@ -15,7 +15,7 @@ from .contracts import (
     LabError, canonical, digest_value, fields, finite, fingerprint, identifier,
     instant, parse_json, require, utc_now,
 )
-from .delivery import REPO, connections, definition, gh, validate_target, verify_source_revision
+from .delivery import CONNECTION_API, REPO, connections, definition, gh, validate_target, verify_source_revision
 from .delivery_azure import BlobJournal, Foundry, project_shape
 from .delivery_contracts import MAX_OUTPUT_TOKENS, release
 from .delivery_evaluation import grade, judged_text, text_output
@@ -26,6 +26,8 @@ WORKFLOW = ".github/workflows/dev-smoke.yml"
 # Rate limit only (pay-per-token); capacity 10 throttled the KB's planning calls with 429.
 MAX_MODEL_CAPACITY = 100
 GUID = r"[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}"
+# Terminal attempt states; anything else is uncertain and blocks further runs.
+SETTLED = ("smoke-passed", "reconciled")
 JUDGE_SCHEMA = {
     "type": "object", "additionalProperties": False,
     "properties": {
@@ -83,6 +85,32 @@ def authorize(environ: dict, read=gh, now: datetime | None = None) -> tuple[dict
             and 0 < finite(policy["estimated_monthly_usd"], "monthly estimate") <= 500
             and finite(policy["max_case_usd"], "case ceiling") == 0.05, "Dev cost bounds changed")
     require(fingerprint(binding) == policy["binding_digest"], "Reviewed dev binding differs")
+    validate_binding(binding)
+    run_id, attempt = environ.get("GITHUB_RUN_ID", ""), environ.get("GITHUB_RUN_ATTEMPT", "")
+    require(run_id.isdigit() and attempt.isdigit(), "GitHub run identity required")
+    root = f"repos/{REPO}"
+    run = read(f"{root}/actions/runs/{run_id}")
+    workflow = read(f"{root}/actions/workflows/dev-smoke.yml")
+    main = read(f"{root}/git/ref/heads/main")
+    env = read(f"{root}/environments/dev")
+    branches = read(f"{root}/environments/dev/deployment-branch-policies")
+    require(workflow["state"] == "active" and run["workflow_id"] == workflow["id"]
+            and run["path"] == WORKFLOW and run["event"] == "workflow_dispatch"
+            and run["head_branch"] == "main" and run["status"] == "in_progress"
+            and run["run_attempt"] == int(attempt)
+            and run["head_sha"] == environ.get("GITHUB_SHA") == policy["source_revision"] == main["object"]["sha"],
+            "Run is not the current reviewed main dev workflow")
+    require(env["can_admins_bypass"] is False
+            and env["deployment_branch_policy"] == {"protected_branches": False, "custom_branch_policies": True}
+            and branches["total_count"] == 1
+            and branches["branch_policies"][0]["name"] == "main"
+            and branches["branch_policies"][0]["type"] == "branch",
+            "Dev environment main-only or no-bypass protection changed")
+    # Reviewers may be deferred OR reinstated. GitHub enforces them before this job.
+    return policy, binding
+
+
+def validate_binding(binding: dict) -> dict:
     fields(binding, {"target", "tenant_id", "subscription_id", "client_id", "search_resource_id",
                      "storage_resource_id", "tool_resource_id", "tool_image"})
     for key in ("tenant_id", "subscription_id", "client_id"):
@@ -109,28 +137,7 @@ def authorize(environ: dict, read=gh, now: datetime | None = None) -> tuple[dict
     require(price_url.scheme == "https" and price_url.username is None and price_url.password is None
             and price_url.hostname in ("prices.azure.com", "azure.microsoft.com"),
             "Reviewed Microsoft pricing provenance required")
-    run_id, attempt = environ.get("GITHUB_RUN_ID", ""), environ.get("GITHUB_RUN_ATTEMPT", "")
-    require(run_id.isdigit() and attempt.isdigit(), "GitHub run identity required")
-    root = f"repos/{REPO}"
-    run = read(f"{root}/actions/runs/{run_id}")
-    workflow = read(f"{root}/actions/workflows/dev-smoke.yml")
-    main = read(f"{root}/git/ref/heads/main")
-    env = read(f"{root}/environments/dev")
-    branches = read(f"{root}/environments/dev/deployment-branch-policies")
-    require(workflow["state"] == "active" and run["workflow_id"] == workflow["id"]
-            and run["path"] == WORKFLOW and run["event"] == "workflow_dispatch"
-            and run["head_branch"] == "main" and run["status"] == "in_progress"
-            and run["run_attempt"] == int(attempt)
-            and run["head_sha"] == environ.get("GITHUB_SHA") == policy["source_revision"] == main["object"]["sha"],
-            "Run is not the current reviewed main dev workflow")
-    require(env["can_admins_bypass"] is False
-            and env["deployment_branch_policy"] == {"protected_branches": False, "custom_branch_policies": True}
-            and branches["total_count"] == 1
-            and branches["branch_policies"][0]["name"] == "main"
-            and branches["branch_policies"][0]["type"] == "branch",
-            "Dev environment main-only or no-bypass protection changed")
-    # Reviewers may be deferred OR reinstated. GitHub enforces them before this job.
-    return policy, binding
+    return binding
 
 
 class CheckedHTTP:
@@ -298,7 +305,7 @@ def run_smoke(foundry, journal, policy: dict, binding: dict, bundle: dict, pages
         foundry.arm = CheckedHTTP(foundry.arm, check)
         foundry.search = CheckedHTTP(foundry.search, check)
         records = state.setdefault("dev_smoke", {})
-        require(not any(row["status"] != "smoke-passed" for previous in records.values()
+        require(not any(row["status"] not in SETTLED for previous in records.values()
                         for row in previous["attempts"].values()),
                 "Previous smoke failed or is uncertain; reconcile before another run")
         record = records.setdefault(policy["id"], {"policy_digest": fingerprint(policy), "attempts": {}})
@@ -413,11 +420,65 @@ def run_smoke(foundry, journal, policy: dict, binding: dict, bundle: dict, pages
             raise
 
 
+def reconcile_smoke(foundry, journal, policy_id: str, run_key: str, reason: str) -> dict:
+    """Operator-only: settle an uncertain attempt once its release-local resources are verified gone.
+
+    The attempt, its usage reservation and allowance count are kept; it is never marked passed."""
+    identifier(policy_id, "policy ID")
+    require(re.fullmatch(r"\d+-\d+", run_key) is not None, "GitHub run key required")
+    require(isinstance(reason, str) and 0 < len(reason) <= 300 and reason.isprintable(),
+            "A short printable reconciliation reason is required")
+    with journal.locked() as state:
+        attempt = state.get("dev_smoke", {}).get(policy_id, {}).get("attempts", {}).get(run_key)
+        require(attempt is not None, "Unknown dev smoke attempt")
+        require(attempt["status"] not in SETTLED, "Attempt is already settled")
+        planned = attempt["planned_resources"]
+        # Knowledge is content-addressed and reused by later releases, so it is not release-local.
+        require(foundry.get_agent(planned["agent"]) is None,
+                "Release-local agent still exists; delete it before reconciling")
+        for connection in planned["connections"]:
+            path = (foundry.target["project_resource_id"]
+                    + f"/connections/{connection}?api-version={CONNECTION_API}")
+            require(foundry.arm.request("GET", path, absent_ok=True) is None,
+                    "Release-local connection still exists; delete it before reconciling")
+        attempt.update({"status": "reconciled", "reconciled_from": attempt["status"],
+                        "reconciled_at": utc_now(), "reconciliation": {
+                            "reason": reason, "verified_absent": {
+                                "agent": planned["agent"], "connections": planned["connections"]}}})
+        journal.save(state)
+        return attempt
+
+
+def reconcile_cli(args, environ) -> dict:
+    require(environ.get("GITHUB_ACTIONS") != "true",
+            "Reconciliation is an operator action; CI cannot settle its own attempts")
+    require(all((args.binding, args.policy_id, args.run_key, args.reason)),
+            "reconcile requires --binding, --policy-id, --run-key and --reason")
+    from azure.identity import AzureCliCredential
+
+    binding = validate_binding(parse_json(Path(args.binding).read_bytes()))
+    with AzureCliCredential(tenant_id=binding["tenant_id"]) as credential:
+        foundry = Foundry(binding["target"], credential)
+        try:
+            journal = BlobJournal(binding["target"]["storage_endpoint"], credential)
+            return reconcile_smoke(foundry, journal, args.policy_id, args.run_key, args.reason)
+        finally:
+            foundry.close()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("authorize", "run"))
+    parser.add_argument("command", choices=("authorize", "run", "reconcile"))
+    parser.add_argument("--binding", help="reconcile: reviewed dev binding JSON file")
+    parser.add_argument("--policy-id", help="reconcile: journal policy ID")
+    parser.add_argument("--run-key", help="reconcile: attempt key, <run id>-<run attempt>")
+    parser.add_argument("--reason", help="reconcile: short private reason")
     args = parser.parse_args()
     try:
+        if args.command == "reconcile":
+            result = reconcile_cli(args, os.environ)
+            sys.stdout.write(canonical({key: result[key] for key in ("status", "promotion_authorized")}).decode())
+            return 0
         policy, binding = authorize(os.environ)
         verify_source_revision(policy["source_revision"])
         if args.command == "authorize":

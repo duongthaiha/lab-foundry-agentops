@@ -186,6 +186,13 @@ The grader still rejects extra keys. Hosted and harness runtimes keep the
 prose-only format: the harness's `text.format` support is unverified and the
 hosted image would need a rebuild, so both keep this residual risk.
 
+Settling the attempt: the journal previously had no honest terminal state for a
+reviewed failure; the only ways past the block were a fake `smoke-passed` or a
+journal reset, both of which hide usage. An operator-only `reconcile` command now
+records `reconciled` after verifying the release-local agent and connections are
+gone. The attempt keeps its reservation and still counts against `max_runs`
+(see [stop and teardown](dev-smoke.md#stop-teardown-reset-and-restoring-reviewers)).
+
 ## Local evidence and limits
 
 Run `python -W error::ResourceWarning -m unittest discover -s tests -v` and the
