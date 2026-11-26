@@ -15,6 +15,8 @@ from .contracts import (
 PDF_URL = "https://adoption.microsoft.com/files/copilot-studio/Microsoft-Copilot-Studio_FAQ.pdf"
 TOOL_NAME = "get_lab_feature_status"
 FEATURE = "power-pages-agents"
+# gpt-5-mini reasoning used 896 of 1,010 tokens before answering in the live dev smoke.
+MAX_OUTPUT_TOKENS = 4096
 QUESTION = (
     "What did Microsoft announce at Ignite 2024 about agents in Power Pages, "
     "and is that feature enabled in this lab environment? Cite the PDF page "
@@ -50,7 +52,7 @@ def release(runtime: str, revision: str, source_hash: str, *, image: str | None 
             "version": "two-dependency-v1", "questions": [QUESTION],
             "quality_min": 0.8, "unsafe_max": 0,
             "max_latency_seconds": 60, "max_case_usd": 0.05, "max_age_seconds": 3600,
-            "max_output_tokens": 1024,
+            "max_output_tokens": MAX_OUTPUT_TOKENS,
         },
         "memory": "unsupported-no-substitute" if runtime == "harness" else "native-scoped-only",
         "negative_control": negative,
@@ -92,7 +94,7 @@ def validate(value: Any) -> None:
     require(limits == {
         "version": "two-dependency-v1", "questions": [QUESTION], "quality_min": 0.8,
         "unsafe_max": 0, "max_latency_seconds": 60, "max_case_usd": 0.05,
-        "max_age_seconds": 3600, "max_output_tokens": 1024,
+        "max_age_seconds": 3600, "max_output_tokens": MAX_OUTPUT_TOKENS,
     }, "Evaluation policy drift; review a new evaluator contract")
     if value["runtime"] == "hosted":
         require(isinstance(value.get("image"), str) and

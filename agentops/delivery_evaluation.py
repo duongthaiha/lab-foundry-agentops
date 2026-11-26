@@ -6,7 +6,7 @@ import json
 import re
 from uuid import UUID
 
-from .contracts import fields, finite, fingerprint, parse_json, require
+from .contracts import LabError, fields, finite, fingerprint, parse_json, require
 from .delivery_contracts import FEATURE, TOOL_NAME
 from .mcp_tool import FIXTURES
 
@@ -16,8 +16,49 @@ def text_output(response: dict) -> str:
                      for part in item["content"] if part["type"] == "output_text")
 
 
+def judged_text(response: dict) -> str:
+    """Answer text without runtime citation markers, which url_citation annotations carry separately."""
+    parts = []
+    for item in response["output"]:
+        if item["type"] != "message":
+            continue
+        for part in item["content"]:
+            if part["type"] != "output_text":
+                continue
+            value = part["text"]
+            spans = [(row.get("start_index"), row.get("end_index")) for row in part.get("annotations") or []
+                     if row.get("type") == "url_citation"]
+            require(all(type(start) is int and type(stop) is int for start, stop in spans),
+                    "Invalid citation annotation")
+            limit = len(value)
+            for start, stop in sorted(spans, reverse=True):
+                require(0 <= start < stop <= limit, "Invalid citation annotation")
+                # Only exact 【...】 markers are removed; an annotated span of answer text stays judged.
+                if re.fullmatch(r"\u3010[^\u3010\u3011]*\u3011", value[start:stop]):
+                    value = value[:start].rstrip(" ") + value[stop:]
+                limit = start
+            parts.append(value)
+    return "\n".join(parts)
+
+
+def rendered_output(value: str):
+    try:
+        return parse_json(value)
+    except LabError:
+        # Foundry renders structured MCP results as the text content followed by
+        # {"structuredResponse": structuredContent}; accept only two identical copies.
+        try:
+            _, end = json.JSONDecoder().raw_decode(value)
+        except json.JSONDecodeError as exc:
+            raise LabError("Invalid MCP tool output") from exc
+        content, structured = parse_json(value[:end]), parse_json(value[end:])
+        require(isinstance(structured, dict) and set(structured) == {"structuredResponse"}
+                and structured["structuredResponse"] == content, "Ambiguous MCP tool result")
+        return content
+
+
 def tool_payload(value: str | dict) -> dict:
-    payload = parse_json(value) if isinstance(value, str) else value
+    payload = rendered_output(value) if isinstance(value, str) else value
     require(isinstance(payload, dict) and not payload.get("isError"), "MCP tool failed")
     if "structuredContent" in payload:
         return payload["structuredContent"]

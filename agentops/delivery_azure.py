@@ -10,6 +10,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from .contracts import LabError, canonical, parse_json, require
+from .delivery_contracts import MAX_OUTPUT_TOKENS
 
 
 class NoRedirect(HTTPRedirectHandler):
@@ -55,12 +56,14 @@ def project_shape(actual: Any, desired: Any) -> Any:
     return actual
 
 
-def ensure(http: AzureHTTP, path: str, desired: dict) -> dict:
+def ensure(http: AzureHTTP, path: str, desired: dict, expected: dict | None = None) -> dict:
+    """Create once; `expected` omits request fields the service is known to normalize."""
+    expected = desired if expected is None else expected
     existing = http.request("GET", path, absent_ok=True)
     if existing is None:
         http.request("PUT", path, desired, headers={"If-None-Match": "*"})
         existing = http.request("GET", path)
-    require(project_shape(existing, desired) == desired, "Immutable resource read-back drift")
+    require(project_shape(existing, expected) == expected, "Immutable resource read-back drift")
     return existing
 
 
@@ -201,7 +204,7 @@ class Foundry:
         with self.client.get_openai_client(agent_name=name, max_retries=0, timeout=60) as client:
             conversation = client.conversations.create()
             response = client.responses.create(
-                conversation=conversation.id, input=question, max_output_tokens=1024,
+                conversation=conversation.id, input=question, max_output_tokens=MAX_OUTPUT_TOKENS,
                 metadata={"release_digest": digest},
                 extra_headers={"Foundry-Features": "MicrosoftCopilot=V1Preview"},
             )

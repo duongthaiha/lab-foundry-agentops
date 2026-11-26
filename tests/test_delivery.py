@@ -10,7 +10,7 @@ from agentops.contracts import LabError, canonical, fingerprint, parse_json
 from agentops.delivery import connections, controls, definition, main, matrix, require_live_gate, validate_target, verify_source_revision
 from agentops.delivery_azure import project_shape
 from agentops.delivery_contracts import FEATURE, TOOL_NAME, load, release, save
-from agentops.delivery_evaluation import grade
+from agentops.delivery_evaluation import grade, judged_text, tool_payload
 from agentops.delivery_knowledge import content_readback, desired_knowledge
 from agentops.mcp_tool import FIXTURES
 
@@ -159,6 +159,44 @@ class DeliveryTests(unittest.TestCase):
         target = foundry.target["tool_mcp_url"] + "/releases/" + "a" * 64
         self.assertEqual(tools[1]["server_url"], target)
         self.assertEqual(ensure.call_args_list[1].args[2]["properties"]["target"], target)
+        self.assertEqual([tool["allowed_tools"] for tool in tools],
+                         [{"tool_names": ["knowledge_base_retrieve"]}, {"tool_names": [TOOL_NAME]}])
+        for call in ensure.call_args_list:
+            self.assertTrue(call.args[2]["properties"]["isSharedToAll"])
+            self.assertEqual(call.args[3]["properties"],
+                             {key: value for key, value in call.args[2]["properties"].items()
+                              if key != "isSharedToAll"})
+
+    def test_live_mcp_output_formats_and_citation_markers(self):
+        fixture = {"feature_id": FEATURE, "environment": "dev", "backend": "deterministic-lab-fixture",
+                   **FIXTURES["dev"]}
+        text = canonical(fixture).decode()
+        self.assertEqual(tool_payload(text + canonical({"structuredResponse": fixture}).decode()), fixture)
+        changed = {**fixture, "enabled": not fixture["enabled"]}
+        with self.assertRaisesRegex(LabError, "Ambiguous"):
+            tool_payload(text + canonical({"structuredResponse": changed}).decode())
+        documents = {"documents": [{"page_id": "p0004", "content": "synthetic"}]}
+        self.assertEqual(tool_payload(canonical(documents).decode()), documents)
+        value = observation()
+        value["response"]["output"][0]["output"] = canonical(documents).decode()
+        value["response"]["output"][1]["output"] = text + canonical({"structuredResponse": fixture}).decode()
+        self.assertEqual(grade(value, "dev", ["p0004"], PRICES, 1, SAFETY)["citations"], ["p0004"])
+
+        claim = "Power Pages agents were announced"
+        message = claim + " \u30106:0\u2020source\u3011 in 2024."
+        marker = message.index("\u3010")
+        part = {"type": "output_text", "text": message, "annotations": [
+            {"type": "url_citation", "start_index": marker, "end_index": message.index("\u3011") + 1},
+            {"type": "url_citation", "start_index": 0, "end_index": len(claim)}]}
+        response = {"output": [{"type": "message", "content": [part]}]}
+        self.assertEqual(judged_text(response), claim + " in 2024.")
+        for annotations in ([{"type": "url_citation", "start_index": 0, "end_index": len(message) + 1}],
+                            [{"type": "url_citation", "start_index": "0", "end_index": 3}],
+                            [{"type": "url_citation", "start_index": 0, "end_index": 10},
+                             {"type": "url_citation", "start_index": 5, "end_index": 12}]):
+            part["annotations"] = annotations
+            with self.subTest(annotations=annotations), self.assertRaisesRegex(LabError, "Invalid citation"):
+                judged_text(response)
 
     def test_knowledge_readback_detects_content_drift(self):
         pages = [{"page_id": "p0001", "page_number": 1, "title": "Fixture",

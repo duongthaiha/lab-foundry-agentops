@@ -39,7 +39,7 @@ class NativeToolbox:
             fields(item, {"type", "server_label", "server_url", "allowed_tools",
                           "require_approval", "project_connection_id"})
             label = item["server_label"]
-            require(item["type"] == "mcp" and item["allowed_tools"] == [expected[label]]
+            require(item["type"] == "mcp" and item["allowed_tools"] == {"tool_names": [expected[label]]}
                     and item["require_approval"] == "never"
                     and item["project_connection_id"] == f"{label}-{digest[:20]}",
                     "Toolbox must retain the release-local read-only MCP binding")

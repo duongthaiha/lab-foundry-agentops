@@ -116,9 +116,14 @@ def connections(foundry, digest: str, knowledge: dict) -> list[dict]:
             "authType": "ProjectManagedIdentity", "category": "RemoteTool", "target": url,
             "isSharedToAll": True, "audience": audience, "metadata": {"ApiType": "Azure"},
         }}
-        ensure(foundry.arm, path, desired)
+        # Sent as documented, but the service persists false; access is governed by the project
+        # identity and target RBAC, so this field is not part of the read-back contract.
+        expected = {"properties": {key: value for key, value in desired["properties"].items()
+                                   if key != "isSharedToAll"}}
+        ensure(foundry.arm, path, desired, expected)
+        # The service stores allowed_tools as this filter object; sending it keeps read-back exact.
         tools.append({"type": "mcp", "server_label": label, "server_url": url,
-                      "allowed_tools": [name], "require_approval": "never",
+                      "allowed_tools": {"tool_names": [name]}, "require_approval": "never",
                       "project_connection_id": connection})
     return tools
 

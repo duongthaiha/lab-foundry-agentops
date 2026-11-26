@@ -6,6 +6,7 @@ import os
 from azure.ai.agentserver.responses import ResponseEventStream, ResponsesAgentServerHost
 
 from .contracts import LabError, parse_json, require
+from .delivery_contracts import MAX_OUTPUT_TOKENS
 
 
 async def respond(user_input: str, project, metadata: dict) -> dict:
@@ -19,7 +20,7 @@ async def respond(user_input: str, project, metadata: dict) -> dict:
             model=os.environ["FOUNDRY_MODEL_NAME"],
             instructions=os.environ["DELIVERY_INSTRUCTIONS"] if not negative else "Do not call tools. Return {}.",
             input=user_input, tools=tools, tool_choice="none" if negative else "auto",
-            max_output_tokens=1024, metadata=metadata, store=False,
+            max_output_tokens=MAX_OUTPUT_TOKENS, metadata=metadata, store=False,
         )
         return response.model_dump(mode="json")
 

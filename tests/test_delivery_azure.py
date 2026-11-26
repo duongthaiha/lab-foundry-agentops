@@ -25,6 +25,18 @@ class AzureBoundaryTests(unittest.TestCase):
             ensure(http, "/resources/item", desired)
         self.assertEqual(http.request.call_count, 1)
 
+    def test_known_service_normalization_is_excluded_only_from_readback(self):
+        http = Mock()
+        desired = {"properties": {"target": "https://unit.invalid", "isSharedToAll": True}}
+        expected = {"properties": {"target": "https://unit.invalid"}}
+        http.request.side_effect = [None, {}, {"properties": {"target": "https://unit.invalid", "isSharedToAll": False}}]
+        ensure(http, "/resources/item", desired, expected)
+        self.assertEqual(http.request.call_args_list[1].args[2], desired)
+        http.reset_mock()
+        http.request.side_effect = [{"properties": {"target": "https://other.invalid", "isSharedToAll": True}}]
+        with self.assertRaisesRegex(LabError, "read-back drift"):
+            ensure(http, "/resources/item", desired, expected)
+
     def test_journal_requires_lease_and_expected_etag(self):
         with patch("azure.storage.blob.BlobClient") as client:
             blob = client.return_value
