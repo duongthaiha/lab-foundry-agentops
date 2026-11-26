@@ -229,9 +229,14 @@ as protected environment configuration. Validate allowed and denied operations.
 
 The environment templates use keyless Foundry/Search/Storage, Basic Search,
 DataZoneStandard model deployments (capacity 10 each), capped log ingestion, and
-30-day telemetry retention. `registry.bicep` provides one Basic registry with
+30-day telemetry retention. `monitoring.bicep` (a module of `environment.bicep`)
+adds workspace-based Application Insights, the project's `AppInsights` tracing
+connection and `lab-logs` diagnostic settings. `registry.bicep` provides one Basic registry with
 admin credentials disabled. They deliberately do **not** grant runtime or data
-roles, create agents, deploy content or implement distributed leases. Configure
+roles, create agents, deploy content or implement distributed leases. The one
+tracing grant (Monitoring Metrics Publisher for the project identity on
+Application Insights) is in the separate operator-only `tracing-access.bicep`
+and is never run by the platform workflow. Configure
 those separate identities and scoped grants only after interface verification.
 No deployment succeeded merely because these templates compile.
 

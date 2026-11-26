@@ -146,17 +146,21 @@ resource logs 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
   }
 }
 
-resource insights 'Microsoft.Insights/components@2020-02-02' = {
-  name: '${prefix}-insights'
-  location: location
-  tags: tags
-  kind: 'web'
-  properties: {
-    Application_Type: 'web'
-    WorkspaceResourceId: logs.id
-    IngestionMode: 'LogAnalytics'
-    DisableLocalAuth: true
+// Application Insights, the project tracing connection and resource diagnostic settings. The
+// tracing ingestion role is granted separately by the operator with tracing-access.bicep.
+module monitoring 'monitoring.bicep' = {
+  name: 'agentops-monitoring'
+  params: {
+    location: location
+    prefix: prefix
+    tags: tags
+    accountName: account.name
+    projectName: project.name
+    searchName: search.name
+    storageName: storage.name
+    workspaceName: logs.name
   }
+  dependsOn: [blobs]
 }
 
 output projectId string = project.id
@@ -165,4 +169,5 @@ output projectPrincipalId string = project.identity.principalId
 output searchId string = search.id
 output searchPrincipalId string = search.identity.principalId
 output storageId string = storage.id
-output applicationInsightsId string = insights.id
+output applicationInsightsId string = monitoring.outputs.applicationInsightsId
+output applicationInsightsName string = monitoring.outputs.applicationInsightsName

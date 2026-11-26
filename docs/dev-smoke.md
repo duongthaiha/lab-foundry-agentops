@@ -41,6 +41,7 @@ application's broader four-group authority for this job.
 | Registry | One dev Basic ACR, admin credentials disabled; managed-identity image pull |
 | Storage | One dev Standard_LRS account, no shared keys or public blobs; private `release-locks` container; public network endpoint with Entra RBAC-only data access, tagged `SecurityControl=Ignore` ([MCAPS note](#tenant-governance-mcaps-storage-network-policy)) |
 | Logs | One dev workspace, 30-day retention, proposed 0.1 GB/day ingestion cap; no publisher text/tokens |
+| Debug telemetry | Workspace-based Application Insights with local auth disabled, connected to the project for server-side agent tracing; `lab-logs` diagnostic settings on the account, project, Search and Blob service. All ingestion counts against the 0.1 GB/day cap ([debugging](#debugging-with-application-insights-and-logs)) |
 
 Names must still be checked for availability before creation. Do not silently
 suffix a private binding or switch subscription, region, model or SKU. The
@@ -288,6 +289,41 @@ one without weakening a check:
 - `gpt-5-mini` used roughly 900-1,150 reasoning tokens per smoke turn, so all
   model calls allow 4,096 output tokens. The $0.05 case check is unchanged.
 
+## Debugging with Application Insights and logs
+
+`infra/monitoring.bicep` adds the debug telemetry. `environment.bicep` uses it as
+a module, and it can also be deployed alone to an existing environment such as
+the dev pilot:
+
+- workspace-based Application Insights `<prefix>-insights` with
+  `DisableLocalAuth=true`, writing to the capped environment workspace;
+- the project connection `appinsights` (category `AppInsights`, auth
+  `ProjectManagedIdentity`), which turns on Foundry server-side tracing for
+  Prompt agents. A project accepts only one such connection;
+- `lab-logs` diagnostic settings (all logs, plus account metrics) on the Foundry
+  account and project, Search and the Blob service. Tagged resources do not get
+  the MCAPS policy settings. The Container Apps environment already sends
+  application logs to the workspace.
+
+Because local auth is off, the project identity needs Monitoring Metrics Publisher
+on the component. The platform workflow cannot write role assignments, so a
+platform operator grants it once with `infra/tracing-access.bicep`
+(`applicationInsightsName`, `projectPrincipalId`). Remove that assignment at
+teardown.
+
+Agent traces appear in Application Insights 2-5 minutes after a call. Viewing
+them needs Log Analytics Reader or higher on the workspace. Use the portal's
+Agent monitoring or Tracing view, or query `dependencies`/`traces` for
+`gen_ai.*` attributes, filtered by the agent name recorded in the journal.
+Traces can contain prompts and model output. They are synthetic in this lab, but
+the workspace is a protected store: never copy trace content into public logs.
+
+The CI job's public log still shows only a terse status. For a rejected answer
+contract, the private journal attempt records `reason` and, when available,
+`error_detail`. For an unexpected field this is the sorted field names (at most
+10, with non-identifier names shown as `<non-identifier>`) and the count, never
+the values.
+
 ## Stop, teardown, reset and restoring reviewers
 
 To stop new requests, turn `LIVE_DEV_SMOKE_ENABLED=false` and disable
@@ -300,6 +336,8 @@ journal/resource reconciliation, not blind retry.
 Before any authorized teardown, inventory exact IDs and journal ownership:
 the smoke agent/version/conversations, two digest-named connections, hash-named
 KB/source/index, MCP app/environment, ACR image, storage containers/account,
+Application Insights with its project `appinsights` connection, the `lab-logs`
+diagnostic settings and the Monitoring Metrics Publisher assignment, then
 logs, Foundry project/account/model, and the new dev app/federation/grants.
 Check for other consumers before deleting retained knowledge/connections.
 Delete only these owned resources in dependency order; retain private evidence

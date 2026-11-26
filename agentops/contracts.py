@@ -23,16 +23,31 @@ FORBIDDEN_KEYS = {
 class LabError(ValueError):
     """An explicit contract, gate, or capability rejection."""
 
+    def __init__(self, message: str, detail: dict | None = None):
+        super().__init__(message)
+        # Private diagnostics for protected evidence only; public logs print just the message.
+        self.detail = detail or {}
+
 
 def require(condition: bool, message: str) -> None:
     if not condition:
         raise LabError(message)
 
 
+def key_names(keys, limit: int = 10) -> list[str]:
+    """Sorted identifier-like key names, so diagnostics never echo arbitrary payload text."""
+    names = sorted(key if isinstance(key, str) and re.fullmatch(r"[A-Za-z0-9_.-]{1,64}", key)
+                   else "<non-identifier>" for key in keys)
+    return names[:limit]
+
+
 def fields(value: Any, required: set[str], optional: set[str] | None = None) -> None:
     require(isinstance(value, dict), "Expected a JSON object")
     require(required <= value.keys(), "Missing required fields: " + ", ".join(sorted(required - value.keys())))
-    require(value.keys() <= required | (optional or set()), "Unexpected fields in object")
+    unexpected = value.keys() - (required | (optional or set()))
+    if unexpected:
+        raise LabError("Unexpected fields in object",
+                       {"unexpected_fields": key_names(unexpected), "unexpected_count": len(unexpected)})
 
 
 def text(value: Any, field: str) -> str:
