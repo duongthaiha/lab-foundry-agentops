@@ -7,7 +7,7 @@ import re
 from uuid import UUID
 
 from .contracts import LabError, fields, finite, fingerprint, parse_json, require
-from .delivery_contracts import FEATURE, TOOL_NAME
+from .delivery_contracts import ANSWER_SCHEMA, FEATURE, TOOL_NAME
 from .mcp_tool import FIXTURES
 
 
@@ -113,7 +113,7 @@ def grade(observation: dict, environment: str, page_ids: list[str], prices: dict
     if output.startswith("```json") and output.endswith("```"):
         output = output[7:-3].strip()
     answer = parse_json(output)
-    fields(answer, {"announcement", "citations", "feature_id", "enabled", "environment", "fixture_revision"})
+    fields(answer, set(ANSWER_SCHEMA["required"]))
     require(isinstance(answer["citations"], list) and answer["citations"], "Citation required")
     require(all(isinstance(value, str) and re.fullmatch(r"p[0-9]{4}", value)
                 for value in answer["citations"]), "Citation IDs must be typed page locators")

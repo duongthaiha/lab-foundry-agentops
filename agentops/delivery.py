@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import re
 import subprocess
 import sys
@@ -15,7 +16,7 @@ from .contracts import (
     read_json, require, utc_now,
 )
 from .delivery_azure import BlobJournal, Foundry, ensure, project_shape
-from .delivery_contracts import TOOL_NAME, endpoint, load, release, save
+from .delivery_contracts import ANSWER_SCHEMA, TOOL_NAME, endpoint, load, release, save
 from .delivery_evaluation import grade
 from .delivery_knowledge import MCP_API, acquire_source, materialize, verify_knowledge
 from .delivery_native import NativeDelivery, NativeRuntime
@@ -153,6 +154,10 @@ def definition(bundle: dict, tools: list[dict], target: dict) -> dict:
     if bundle["negative_control"]:
         result["tool_choice"] = "none"
         result["instructions"] = 'Return only {"announcement":"negative control"}. Do not call tools.'
+    elif bundle["runtime"] == "prompt":
+        # Ordinary prompt only; text.format support on the Copilot harness is unverified.
+        result["text"] = {"format": {"type": "json_schema", "name": "lab_answer_v1", "strict": True,
+                                     "schema": copy.deepcopy(ANSWER_SCHEMA)}}
     return result
 
 
