@@ -13,8 +13,8 @@ Do not treat this source map as a line-by-line review of an unread revision.
 | AO-01 | Named roles/reviewer, $500 USD/month, target/network and live evaluation limits recorded | Enforce the agreed live operating model |
 | AO-02 | Current regional documentation, model/quota/policy reads, harness-memory boundary | Actual runtime/API entitlement and behavior probes |
 | AO-03 | Package/test/docs layout, approved CODEOWNERS, passing four-platform PR CI | Manual code review and merge |
-| AO-04 | Budget deployed/read back; isolated environment/registry Bicep; standing-cost subtotal | Full cost envelope, approved provisioning, RBAC and repeatability |
-| AO-05 | Reviewer environments verified; main-only platform workflow authored, disabled by default | Reviewed workflow on main, scoped OIDC/Entra and real authorization tests |
+| AO-04 | Budget/read-back; Bicep/ARM validation; create-only what-if; names and foundation cost preflight | Protected provisioning, runtime RBAC and repeatability |
+| AO-05 | Reviewed main code; secretless scoped OIDC bootstrap; reviewer control temporarily deferred for dry-run only | Restore reviewers before live enablement; real authorization tests |
 | AO-06 | Synthetic Contoso contracts/cases for three tracks | Real agent implementations and measured baselines |
 | AO-07 | Deterministic bundle, change digests, integrity/path checks | Built hosted artifact, full real component provenance |
 | AO-08 | Separate strict synthetic environment bindings | Validated real Azure bindings |
@@ -22,7 +22,7 @@ Do not treat this source map as a line-by-line review of an unread revision.
 | AO-10 | Contract/binding checks and retained dependencies | Supported data-plane reconciliation/read-back/readiness |
 | AO-11 | Non-serving candidate and readiness gates in local state | Real serving observation, identity/access, activation/final status |
 | AO-12 | Inclusive 80% quality boundary, exact-context finite gates, expiry, rejection | Enforce approved live limits with actual candidate measurements |
-| AO-13 | Same bytes across dev/test/labprod; simulated approvals | Protected approvals and caller-verified live serving transitions |
+| AO-13 | Same bytes across dev/test/labprod; explicit placeholder approvals with failed-evaluation rejection | Restore real approvals and prove caller-verified live serving transitions |
 | AO-14 | Retained composite references, independent local rollback | Real dependencies/caller behavior/session recovery |
 | AO-15 | Durable started/success/rejected/rollback attempt history | Remote immutable evidence, authenticated approvals and provenance |
 | AO-16 | Replayable local CLI/runbook | Live demo and another team member's replay |
@@ -57,7 +57,7 @@ Do not treat this source map as a line-by-line review of an unread revision.
 | S9 Tools/toolboxes | Untested live | Shared mutable defaults, call identities, schemas/traces/approval behavior need actual observations |
 | S10 Knowledge/Foundry IQ | Untested live | Reuse/ACL/ingestion ordering/content rollback claims remain conditional |
 | S11 Memory | Caveat; synthetic recovery only | No native Memory tests; harness unsupported with no substitute; unjournaled writes block lossless-migration claims |
-| S12 Security/identity | Governance configured; delivery untested | Initial private-plan rejection resolved after user visibility change; no OIDC or live delivery yet |
+| S12 Security/identity | Bootstrap verified; live gate deferred | Four scoped grants and secretless federation; reviewer removal is dry-run-only, real workflow disabled |
 | S13 Observability | Untested live | Attempt history is not runtime telemetry, monitoring or an alert demonstration |
 | S14 Preview/constraints | Documentation and management plane checked | Selected models/quota observed; runtime/API entitlement still untested |
 

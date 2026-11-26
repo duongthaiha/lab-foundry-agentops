@@ -37,6 +37,30 @@ Prompt and Hosted fixture journals show partial-write divergence, blocked
 rollback, durable repair, forget, and expiry. Harness memory is explicitly
 `unsupported-no-substitute`.
 
+### Approval-free rehearsal
+
+The **Simulated approval rehearsal** GitHub workflow runs on relevant pushes and
+can be dispatched manually once its definition is on the default branch.
+It has a labeled placeholder job followed by Ubuntu and Windows rehearsals.
+Neither job references a GitHub environment or requests an OIDC token. The real
+`platform.yml` workflow is separate, disabled and not called by the rehearsal.
+
+The same local `demo` command automatically records
+`placeholder-only-not-a-live-approval` for every simulated promotion and rollback.
+Each of the nine deliberately failing candidates is also tested against the
+placeholder: it must reject approval before a fresh passing evaluation.
+Expect 27 successful placeholder approvals and nine failed-evaluation approval
+blocks. The report explicitly says `approval_mode: placeholder`,
+`live_authorization: false` and `live_validation: false`.
+
+Download `simulated-rehearsal-ubuntu-latest` or
+`simulated-rehearsal-windows-latest` from the workflow run within seven days.
+They contain only the generated synthetic rehearsal, not ignored `.lab/` cloud
+configuration. SQLite paths refer to the originating runner; these artifacts
+are evidence snapshots, not a distributed-state or portable live deployment.
+Restore the real reviewer control per [live gates](live-gates.md#temporary-reviewer-deferral)
+before enabling any cloud path. A placeholder is not that restoration.
+
 This proves local state-machine and persistence behavior, **not** actual model
 answers, tool calls, runtime identity, shared service instances, Foundry Memory,
 or service endpoint atomicity. No HTTP call or real runtime activation occurs.

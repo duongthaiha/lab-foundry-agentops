@@ -25,13 +25,18 @@ overwrite an existing demo. Use a new named output directory for another run.
 Every result is labelled `simulated`; the metrics are fixture values, not model
 measurements. Hosted image references are synthetic and have not been built.
 
-`--mode live` fails before creating state. No Foundry deployment, runtime API
-adapter, Entra/OIDC setup, or real serving endpoint exists here. The Foundry
-dependency setup completed after explicit renewed approval. After the user made
-the repository public, required-reviewer environments were configured. Live
-delivery still needs reviewed deployment code on `main`, scoped OIDC, a complete
-cost envelope and verified runtime integrations. The platform workflow is
-disabled by default; no live agents or billable infrastructure have been deployed.
+`--mode live` fails before creating state. No Foundry runtime adapter or serving
+endpoint exists here. Reviewed platform code is on `main`; a nonbillable,
+secretless OIDC bootstrap and four empty lab groups exist. No live agents or
+billable infrastructure have been deployed.
+
+**Temporary dry-run posture:** the user deferred GitHub environment reviewer
+requirements. The real platform workflow is disabled and
+`LIVE_PLATFORM_ENABLED=false`; main-only restrictions, disabled admin bypass and
+scoped identity grants remain unchanged. Restore and verify reviewers before
+any live use, following [the restoration checklist](docs/live-gates.md#temporary-reviewer-deferral).
+The independent **Simulated approval rehearsal** workflow needs no manual
+approval and has no Azure credentials, environment binding or OIDC permission.
 
 The public configuration example is in `environments/lab.example.json`: $500 USD/month,
 Sweden Central, the exact `foudnry-agentops-lab` base name, and `@duongthaiha`
@@ -49,6 +54,6 @@ spending cutoff**. See the live-gates document for its observed deployment statu
 - [Cost, permissions, and teardown gates](docs/live-gates.md)
 - [Backlog coverage and recommendation findings](docs/findings.md)
 
-The local-only GitHub Actions definition runs tests and the synthetic demo; it
-does not provision resources or grant permissions. Its remote execution is
-unverified until the workflow is actually run.
+Local-control CI has passed on Ubuntu/Windows and Python 3.11/3.13.
+The separate rehearsal uploads synthetic bundles, reports and state for review;
+its placeholder approvals never count as live authorization.

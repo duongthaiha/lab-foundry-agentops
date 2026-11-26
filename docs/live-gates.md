@@ -1,9 +1,59 @@
 # Live execution, cost and teardown gates
 
-**Current state: governance prepared; live delivery not enabled.**
+**Current state: dry-run only; reviewer control temporarily deferred.**
 Foundry dependency setup and its hosted/harness environment preflight completed
 after renewed user approval. Fresh ARM and azd authentication succeeded; no
-relogin is required. No billable lab resources or OIDC identities were created.
+relogin was required. No billable lab resources were created. A secretless
+single-tenant platform app, one exact environment federation, four empty lab
+groups and four resource-group-scoped Contributor grants were created and read
+back. No Owner/subscription grant, password, certificate or requested API
+permission was added. Actual OIDC login has not run.
+
+## Temporary reviewer deferral
+
+At the user's request on 2026-11-26, the `required_reviewers` protection was
+removed from `dev`, `test`, `labprod` and `platform`. Independent read-back
+confirmed the environments were preserved, their exact `main` branch policies
+were unchanged and `can_admins_bypass` remained `false`.
+
+**This active setting is not approval to deploy.** Before removing the rules,
+the real platform workflow was disabled at GitHub and
+`LIVE_PLATFORM_ENABLED` was set to `false`. Its only deployment run,
+[45728748173](https://github.com/duongthaiha/lab-foundry-agentops/actions/runs/45728748173),
+was cancelled at the reviewer gate, with zero executed steps. All four resource
+groups were then independently verified empty. No pending approval was submitted.
+The separate `simulated-rehearsal.yml` contains no cloud login, environment
+binding or `id-token: write`; its placeholder permits synthetic work only.
+
+### Restore before live use
+
+1. Keep `platform.yml` disabled and `LIVE_PLATFORM_ENABLED=false`. Inventory every
+   workflow with cloud credentials or OIDC permissions and all queued, waiting
+   or running deployments; cancel unintended live work and verify terminal state.
+2. Restore each of the four environments using the environment REST PUT endpoint
+   with `reviewers: [{"type": "User", "id": 2048899}]` (`@duongthaiha`),
+   `prevent_self_review: false`, `can_admins_bypass: false`, and
+   `deployment_branch_policy: {"protected_branches": false, "custom_branch_policies": true}`.
+   Preserve unrelated controls and the existing exact `main` branch rule; use
+   the pre-change snapshot rather than deleting/recreating environments.
+   Self-review is allowed only because the approved lab owner holds both roles.
+3. GET every environment and its `deployment-branch-policies`; verify the named
+   required reviewer, main-only rule, no admin bypass and preserved other rules.
+   Do not mistake CODEOWNERS or a successful mock job for this verification.
+4. Review deployment code on `main`, its explicit `environment: platform`
+   binding, the exact federation subject and four scoped grants. Refresh
+   name/quota/policy/cost and teardown evidence. Restore reviewers before
+   enabling either the workflow or `LIVE_PLATFORM_ENABLED`.
+5. With explicit live authorization, enable `platform.yml` and the repository
+   flag, dispatch the reviewed revision, and confirm it pauses for the real
+   environment reviewer **before** login or provisioning. The named human must
+   approve the particular run. Recheck actual allowed/denied identity actions.
+   Any unexpected execution or failed read-back closes both live switches again.
+
+The same restoration is required before introducing future dev/test/labprod
+agent-delivery jobs. Their identities, runtime tests and deployment evidence
+remain unimplemented. Raw before/after settings and scoped bootstrap/teardown
+IDs stay in ignored `.lab/` evidence, never the public repository.
 
 ## Confirmed configuration and observed preflight
 
@@ -42,8 +92,9 @@ Read-only checks on 2026-11-25 observed:
   `@duongthaiha`, admin bypass disabled, self-review allowed by the single-owner
   lab decision, and deployment branch `main` only.
 
-No approval architecture substitution has been authorized. Before OIDC/live
-delivery, read back these rules and verify the reviewed deployment jobs reference
+The later temporary reviewer deferral above supersedes the original requirement
+only for this dry-run phase. Before OIDC/live
+delivery, restore and read back the rules and verify reviewed deployment jobs reference
 the correct environment. Do not issue credentials to PR code or widen trust to
 arbitrary branches. CODEOWNERS is not a substitute. Because both lab roles have
 the same owner, this lab does not claim independent approver separation.
@@ -98,6 +149,16 @@ transfer and taxes are **not included**. This is not a complete lab estimate.
 Rates use the [Azure Retail Prices API](https://prices.azure.com/api/retail/prices);
 AI Search uses the retail service label `Azure Cognitive Search`.
 
+The subsequent 31-day foundation estimate is **$260.8456**: Search $225.432,
+ACR $5.1646, 9.3 GB log ingestion at $2.99/GB ($27.807), 30 GB hot LRS storage
+($0.552), and the stated operation allowance ($1.89: 300K writes, 300K reads,
+300K other operations and 30K list operations). This is an estimate under those
+usage assumptions, not a hard cap; logging caps and budgets may lag.
+ARM validation succeeded and subscription what-if contained 44 creates with no
+updates; all ten global names were available at preflight. These observations
+expire and do not authorize provisioning during the dry-run phase.
+Hosted/harness, inference, memory and knowledge traffic remain separately gated.
+
 `infra/budget.bicep` defines a separate $500 monthly budget filtered to exactly
 the three environment groups plus the lab shared group. Actual-cost alerts at
 50%, 80% and 100% target subscription Owners. Never overwrite pre-existing
@@ -137,19 +198,21 @@ actions using the actual caller identity at each hop.
 
 The local-check workflow has only `contents: read` and no OIDC/cloud calls.
 It does not establish protected-environment enforcement, live workload identity
-or delivery permissions. No Entra app, federated credential or role assignment
-has been created. The four required-reviewer environments have been independently
-read back successfully.
+or delivery permissions. A platform app/federation and exactly four scoped
+Contributor assignments were subsequently created and read back. The original
+reviewer rules were verified, then temporarily removed as described above.
 
 `platform.yml` is a **disabled-by-default reviewed deployment workflow**. Its
 deployment job explicitly references `environment: platform`, only admits
 `refs/heads/main`, and also requires repository variable `LIVE_PLATFORM_ENABLED`
-to equal `true`. That variable has not been set. It has no PR trigger. Its default
+to equal `true`. The variable is currently `false`, and the workflow itself is
+disabled at GitHub. It has no PR trigger. Its default
 operation is `what-if`; applying requires an explicit dispatch input.
 
-Before enabling it, merge reviewed public-safe code, refresh name/quota/policy/
-cost checks, bootstrap the four exact resource groups and a dedicated platform
-OIDC principal, then grant Contributor only on those groups. The workflow cannot
+The initial public-safe code was merged to `main` in commit
+`55f8c3d13ca13c961270e060b957812efc01db11`, and scoped bootstrap is complete.
+Before enabling it, restore reviewers and refresh name/quota/policy/cost checks.
+Keep Contributor limited to the four exact groups. The workflow cannot
 create resource groups or write RBAC assignments and must not receive Owner or
 subscription-wide Contributor. Federation must use issuer
 `https://token.actions.githubusercontent.com`, audience `api://AzureADTokenExchange`
@@ -182,11 +245,13 @@ Export evidence first, revoke only lab-owned identity grants, enumerate retained
 items and their ongoing cost, and verify the final inventory after deletion.
 Deletion needs explicit confirmation; deployment approval is not teardown approval.
 
-Current allowed nonbillable creation scope is only the lab-filtered budget:
+The original nonbillable budget resource is:
 `/subscriptions/<target-subscription>/providers/Microsoft.Consumption/budgets/foudnry-agentops-lab-monthly`
-and its subscription deployment record. Teardown of that budget requires explicit
-confirmation and must preserve the two pre-existing budgets. No resource-group,
-Foundry, Search, Storage, ACR, telemetry or Entra deletion is currently needed.
+and its subscription deployment record. The four empty groups, platform app/
+service principal, exact federation and four scoped grants now also exist.
+Their exact IDs are recorded separately in the ignored bootstrap inventory.
+Teardown requires explicit confirmation and must preserve pre-existing budgets
+and all unrelated resources. No billable lab resource currently needs deletion.
 
 ## Capability blockers that cannot be replaced silently
 

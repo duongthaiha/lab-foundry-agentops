@@ -9,6 +9,9 @@ from .releases import ReleaseLab
 from .simulation_state import SyntheticJournal, SyntheticScope
 
 
+PLACEHOLDER_APPROVER = "placeholder-only-not-a-live-approval"
+
+
 def fixture_report(candidate: dict, *, passes: bool = True) -> dict:
     return {
         "evidence_type": "simulated", "status": "completed", "context": candidate["context"],
@@ -73,6 +76,9 @@ def demo(root: Path, revision: str) -> dict:
     result = {
         "evidence_type": "simulated",
         "warning": "No Azure calls, measured model metrics, actual runtime authorization, or deployment proof.",
+        "approval_mode": "placeholder",
+        "live_authorization": False,
+        "failed_evaluation_approval_blocks": 0,
         "runtimes": {}, "memory": [],
         "harness_memory": "unsupported-no-substitute",
     }
@@ -82,7 +88,7 @@ def demo(root: Path, revision: str) -> dict:
         output = reports / f"{candidate_id}-{len(lab.history())}-pass.json"
         output.write_bytes(canonical(report))
         lab.record_evaluation(candidate_id, report)
-        lab.approve(candidate_id, "synthetic-reviewer-not-an-authenticated-identity")
+        lab.approve(candidate_id, PLACEHOLDER_APPROVER)
 
     for runtime in RUNTIMES:
         runtime_records = {"releases": {}, "rollback": {}}
@@ -115,6 +121,13 @@ def demo(root: Path, revision: str) -> dict:
                         raise LabError("Failing candidate was not rejected")
                     require(before == lab.serving("contoso-" + runtime, environment),
                             "Rejected candidate changed serving")
+                    try:
+                        lab.approve(candidate_id, PLACEHOLDER_APPROVER)
+                    except LabError as exc:
+                        require("No passing evaluation" in str(exc), "Unexpected placeholder-approval failure")
+                    else:
+                        raise LabError("Placeholder approval bypassed a failed evaluation")
+                    result["failed_evaluation_approval_blocks"] += 1
                 evaluate_and_approve(candidate_id)
                 promoted = lab.promote(candidate_id, lab.serving("contoso-" + runtime, environment))
                 runtime_records["releases"][version]["environments"][environment] = {
@@ -141,8 +154,12 @@ def demo(root: Path, revision: str) -> dict:
     (root / "report.json").write_bytes(canonical(result))
     return {
         "evidence_type": "simulated", "report": str(root / "report.json"),
+        "approval_mode": result["approval_mode"], "live_authorization": False,
         "runtimes": len(result["runtimes"]), "environments": list(ENVIRONMENTS),
         "attempts": len(result["attempts"]),
         "rejected_attempts": sum(attempt["outcome"] == "rejected" for attempt in result["attempts"]),
+        "placeholder_approvals": sum(attempt["operation"] == "approve" and attempt["outcome"] == "succeeded"
+                                     for attempt in result["attempts"]),
+        "failed_evaluation_approval_blocks": result["failed_evaluation_approval_blocks"],
         "live_validation": False,
     }

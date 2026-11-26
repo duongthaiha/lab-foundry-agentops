@@ -1,0 +1,72 @@
+name: Simulated approval rehearsal
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - agentops/**
+      - tests/**
+      - .github/workflows/simulated-rehearsal.yml
+
+permissions:
+  contents: read
+
+jobs:
+  placeholder-approval:
+    name: Placeholder only - no live authorization
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      approval_mode: ${{ steps.placeholder.outputs.approval_mode }}
+    steps:
+      - id: placeholder
+        shell: bash
+        run: |
+          echo 'approval_mode=placeholder' >> "$GITHUB_OUTPUT"
+          echo 'Simulation only. This job grants no GitHub environment approval or Azure authority.' >> "$GITHUB_STEP_SUMMARY"
+
+  rehearse:
+    name: Simulated lifecycle (${{ matrix.os }})
+    needs: placeholder-approval
+    if: needs.placeholder-approval.outputs.approval_mode == 'placeholder'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    env:
+      EXPECTED_APPROVAL_MODE: ${{ needs.placeholder-approval.outputs.approval_mode }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.13"
+      - name: Check local controls, including live-mode rejection
+        run: python -W error::ResourceWarning -m unittest discover -s tests -v
+      - name: Rehearse three runtimes through dev, test, labprod and rollback
+        shell: pwsh
+        run: |
+          python -m agentops --mode simulated demo --output rehearsal --source-revision $env:GITHUB_SHA > rehearsal-summary.json
+          if ($LASTEXITCODE -ne 0) { throw 'Simulation failed; no live fallback is permitted.' }
+          $summary = (Get-Content -Raw rehearsal-summary.json | ConvertFrom-Json).result
+          if ($summary.approval_mode -ne $env:EXPECTED_APPROVAL_MODE -or
+              $summary.live_authorization -ne $false -or $summary.live_validation -ne $false -or
+              $summary.runtimes -ne 3 -or $summary.placeholder_approvals -ne 27 -or
+              $summary.failed_evaluation_approval_blocks -ne 9) {
+            throw 'Simulation evidence is incomplete or has an unexpected authority level.'
+          }
+          "## Simulated result`n27 placeholder approvals; 9 approvals rejected after failed evaluation.`nNo live authorization or Azure validation." |
+            Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+      - name: Retain synthetic evidence, including partial failure output
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: simulated-rehearsal-${{ matrix.os }}
+          path: |
+            rehearsal/
+            rehearsal-summary.json
+          if-no-files-found: error
+          retention-days: 7
