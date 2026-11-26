@@ -12,7 +12,7 @@ Do not treat this source map as a line-by-line review of an unread revision.
 |---|---|---|
 | AO-01 | Named roles/reviewer, $500 USD/month, target/network and live evaluation limits recorded | Enforce the agreed live operating model |
 | AO-02 | Current regional documentation, model/quota/policy reads, harness-memory boundary | Actual runtime/API entitlement and behavior probes |
-| AO-03 | Package/test/docs layout, approved CODEOWNERS, local CI definition | Actual PR checks |
+| AO-03 | Package/test/docs layout, approved CODEOWNERS, passing four-platform PR CI | Manual code review and merge |
 | AO-04 | Budget deployed/read back; isolated environment/registry Bicep; standing-cost subtotal | Full cost envelope, approved provisioning, RBAC and repeatability |
 | AO-05 | Reviewer environments verified; main-only platform workflow authored, disabled by default | Reviewed workflow on main, scoped OIDC/Entra and real authorization tests |
 | AO-06 | Synthetic Contoso contracts/cases for three tracks | Real agent implementations and measured baselines |
@@ -21,7 +21,7 @@ Do not treat this source map as a line-by-line review of an unread revision.
 | AO-09 | Sorted process-shared lock keys and competing-writer tests | Shared distributed lease backend, live cancellation/reconciliation |
 | AO-10 | Contract/binding checks and retained dependencies | Supported data-plane reconciliation/read-back/readiness |
 | AO-11 | Non-serving candidate and readiness gates in local state | Real serving observation, identity/access, activation/final status |
-| AO-12 | Inclusive 80% quality boundary, exact-context finite gates, expiry, rejection | Complete live policy and actual candidate evaluations |
+| AO-12 | Inclusive 80% quality boundary, exact-context finite gates, expiry, rejection | Enforce approved live limits with actual candidate measurements |
 | AO-13 | Same bytes across dev/test/labprod; simulated approvals | Protected approvals and caller-verified live serving transitions |
 | AO-14 | Retained composite references, independent local rollback | Real dependencies/caller behavior/session recovery |
 | AO-15 | Durable started/success/rejected/rollback attempt history | Remote immutable evidence, authenticated approvals and provenance |
@@ -51,7 +51,7 @@ Do not treat this source map as a line-by-line review of an unread revision.
 | S3 Prompt CI/CD | Untested live | Local transitions only; no ordinary Prompt agent deployed |
 | S4 Hosted/azd | Prerequisites observed; runtime untested | Setup/auth/preflight passed; synthetic image digest is not a built artifact |
 | S5 Serving/rollback/canary | Caveat; locally exercised | Local atomic SQL update is not evidence of Foundry pin atomicity or data rollback |
-| S6 Pipeline/coordination | Caveat; locally exercised | OS locks and SQL transactions are not distributed leases; CI definition unexecuted remotely |
+| S6 Pipeline/coordination | Caveat; controller CI exercised | OS locks and SQL transactions are not distributed leases; remote CI has no Azure delivery credentials |
 | S7 Environment strategy | Caveat; locally exercised | Synthetic scope rejection is not Azure account/network isolation evidence |
 | S8 Evaluation | Caveat; locally exercised | Exact context and thresholds tested with fabricated metrics, not LLM quality |
 | S9 Tools/toolboxes | Untested live | Shared mutable defaults, call identities, schemas/traces/approval behavior need actual observations |
@@ -68,6 +68,13 @@ documented CLI demo. The demo persists source fixtures, byte-identical bundle
 references, separate binding/content/state records, both failed and passed
 fabricated reports, serving transitions, and six synthetic memory reconciliation
 runs. Evidence is tagged `simulated` throughout; `live_validation` is false.
+
+The public review commit `d182183dfbf73fc4247a98e09948feed43d71101`
+passed all four combinations of Ubuntu/Windows and Python 3.11/3.13 in
+[the pull-request workflow](https://github.com/duongthaiha/lab-foundry-agentops/actions/runs/45726488629).
+Each ran the 27 tests and synthetic CLI replay; Ubuntu/Python 3.13 also compiled
+all three Bicep templates. The separate push workflow also passed. These are
+remote controller/build checks, not live Azure integration tests.
 
 Required next observations include actual runtime identities and denial paths,
 same-instance knowledge reuse, tool invocation traces/default changes, native
