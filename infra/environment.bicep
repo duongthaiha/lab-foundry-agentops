@@ -11,10 +11,16 @@ param nameSuffix string = ''
 
 var environmentSuffix = environment == 'labprod' ? 'prod' : environment
 var prefix = '${baseName}-${environmentSuffix}${nameSuffix}'
+// SecurityControl=Ignore is the MCAPS governance policies' own exclusion tag. Without it
+// SFI-NS2.2.1 modify forces storage public network access to Disabled, which blocks the
+// GitHub-hosted runner. The tag also skips sibling MCAPS modify policies, so the
+// compensating controls below (Entra-only auth with local/shared-key auth disabled, no
+// anonymous blob access, HTTPS with TLS 1.2) are declared explicitly and must stay.
 var tags = {
   workload: 'agentops-lab'
   environment: environment
   dataClassification: 'synthetic'
+  SecurityControl: 'Ignore'
 }
 
 resource account 'Microsoft.CognitiveServices/accounts@2025-06-01' = {
@@ -41,6 +47,7 @@ resource project 'Microsoft.CognitiveServices/accounts/projects@2025-06-01' = {
   parent: account
   name: '${prefix}-project'
   location: location
+  tags: tags
   identity: { type: 'SystemAssigned' }
   properties: {
     displayName: 'AgentOps ${environment}'
@@ -51,6 +58,7 @@ resource project 'Microsoft.CognitiveServices/accounts/projects@2025-06-01' = {
 resource chat 'Microsoft.CognitiveServices/accounts/deployments@2025-06-01' = {
   parent: account
   name: 'gpt-5-mini'
+  tags: tags
   sku: { name: 'DataZoneStandard', capacity: 10 }
   properties: {
     model: { format: 'OpenAI', name: 'gpt-5-mini', version: '2025-08-07' }
@@ -62,6 +70,7 @@ resource chat 'Microsoft.CognitiveServices/accounts/deployments@2025-06-01' = {
 resource embedding 'Microsoft.CognitiveServices/accounts/deployments@2025-06-01' = {
   parent: account
   name: 'text-embedding-3-small'
+  tags: tags
   sku: { name: 'DataZoneStandard', capacity: 10 }
   properties: {
     model: { format: 'OpenAI', name: 'text-embedding-3-small', version: '1' }
