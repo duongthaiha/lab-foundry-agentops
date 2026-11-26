@@ -1,0 +1,10 @@
+FROM python:3.13-slim
+WORKDIR /app
+ENV PYTHONNOUSERSITE=1
+COPY requirements-live.txt .
+RUN pip install --no-cache-dir -r requirements-live.txt
+COPY agentops ./agentops
+RUN useradd --uid 10001 --create-home agent
+USER 10001
+EXPOSE 8080
+ENTRYPOINT ["python", "-m", "agentops.mcp_tool"]
