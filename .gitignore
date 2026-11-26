@@ -1,0 +1,9 @@
+__pycache__/
+*.py[cod]
+.lab/
+ci-demo/
+.venv/
+.azure/
+.env
+.env.*
+!.env.example

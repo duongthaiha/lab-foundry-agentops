@@ -1,0 +1,12 @@
+# Both lab roles are assigned to the same reviewer by explicit user choice.
+* @duongthaiha
+
+# AI Engineer: agent behavior, evaluations and delivery through labprod.
+/agentops/ @duongthaiha
+/tests/ @duongthaiha
+/.github/workflows/ @duongthaiha
+
+# Platform Engineer: landing zone, networking, policy and governance.
+/infra/ @duongthaiha
+/environments/ @duongthaiha
+/.github/CODEOWNERS @duongthaiha

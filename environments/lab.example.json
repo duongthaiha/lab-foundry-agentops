@@ -1,0 +1,36 @@
+{
+  "subscription_id": "<your-subscription-id>",
+  "tenant_id": "<your-tenant-id>",
+  "base_name": "foudnry-agentops-lab",
+  "location": "swedencentral",
+  "repository": "duongthaiha/lab-foundry-agentops",
+  "monthly_budget": {
+    "amount": 500,
+    "currency": "USD",
+    "name": "foudnry-agentops-lab-monthly",
+    "notification_thresholds_percent": [50, 80, 100],
+    "hard_cap": false
+  },
+  "owners": {
+    "ai_engineer": "duongthaiha",
+    "platform_engineer": "duongthaiha"
+  },
+  "evaluation": {
+    "quality_min": 0.8,
+    "unsafe_max": 0,
+    "latency_ms_max": 60000,
+    "cost_usd_max": 0.05,
+    "max_age_seconds": 3600,
+    "memory_retention_seconds": 86400,
+    "async_completion_timeout_seconds": 300
+  },
+  "network": "public-endpoints-entra-authentication-synthetic-only",
+  "environments": {
+    "dev": {"resource_group": "foudnry-agentops-lab-dev"},
+    "test": {"resource_group": "foudnry-agentops-lab-test"},
+    "labprod": {"resource_group": "foudnry-agentops-lab-prod"}
+  },
+  "shared_resource_group": "foudnry-agentops-lab-shared",
+  "deployment_status": "gated_pending_reviewed_delivery",
+  "oidc_status": "not_created"
+}
