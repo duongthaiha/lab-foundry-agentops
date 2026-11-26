@@ -114,6 +114,28 @@ Foundry behaviour.
     untrusted code.
   - A policy exemption, which is outside the lab's authority.
 
+## CI identity findings from the first dev-smoke dispatches
+
+Observed on 2026-11-26 in the first two `dev-smoke.yml` runs. Neither run reached
+the release journal, so no attempt was recorded and no Azure state changed.
+
+- **OIDC subject format.** Run 45903981856 failed at `azure/login` with
+  AADSTS700213 (no matching federated identity record). The repository's OIDC
+  subject customization uses `use_immutable_subject=true`, so the token subject is
+  `repo:duongthaiha@2048899/lab-foundry-agentops@1472036346:environment:dev`, not
+  the plain `owner/repo` form the runbook listed. The single dev federated
+  credential was changed to that exact subject; issuer and audience are unchanged
+  and no wildcard was added. Local rehearsals cannot catch this because they use
+  the operator's credentials.
+- **Azure CLI credential arguments.** Run 45904270748 logged in, then failed
+  before any data-plane call: `AzureCliCredential(tenant_id=..., subscription=...)`
+  makes azure-identity pass both `--tenant` and `--subscription` to
+  `az account get-access-token`, which the CLI rejects ("Please specify only one
+  of subscription and tenant, not both"). The credential now passes only the
+  tenant; `azure/login` selects the subscription, and `verify_ci_identity` still
+  checks the token's tenant and application. A unit test pins the constructor
+  arguments.
+
 ## Local evidence and limits
 
 Run `python -W error::ResourceWarning -m unittest discover -s tests -v` and the
