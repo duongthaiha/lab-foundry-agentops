@@ -210,4 +210,5 @@ class Foundry:
         require(after["agent_endpoint"] == before["agent_endpoint"], "Endpoint changed during invocation")
         return {"response": result, "requested_version": version, "route_before": rules,
                 "route_after": rules, "conversation_id": conversation.id,
-                "runtime": runtime, "observed_at": datetime.now(timezone.utc).isoformat()}
+                "runtime": runtime, "release_digest": digest,
+                "observed_at": datetime.now(timezone.utc).isoformat()}

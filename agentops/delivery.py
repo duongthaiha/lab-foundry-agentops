@@ -11,7 +11,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from .contracts import (
-    ENVIRONMENTS, RUNTIMES, LabError, canonical, fields, fingerprint,
+    ENVIRONMENTS, RUNTIMES, LabError, canonical, digest_value, fields, fingerprint,
     read_json, require, utc_now,
 )
 from .delivery_azure import BlobJournal, Foundry, ensure, project_shape
@@ -86,12 +86,13 @@ def validate_target(target: dict, environment: str):
 
 
 def connections(foundry, digest: str, knowledge: dict) -> list[dict]:
+    digest_value(digest, "release digest")
     target = foundry.target
     kb_url = target["search_endpoint"] + f"/knowledgebases/{knowledge['kb']}/mcp?api-version={MCP_API}"
     tools = []
     for label, url, audience, name in (
         ("knowledge-base", kb_url, "https://search.azure.com/", "knowledge_base_retrieve"),
-        ("lab-tools", target["tool_mcp_url"], target["tool_audience"], TOOL_NAME),
+        ("lab-tools", target["tool_mcp_url"] + f"/releases/{digest}", target["tool_audience"], TOOL_NAME),
     ):
         connection = f"{label}-{digest[:20]}"
         path = target["project_resource_id"] + f"/connections/{connection}?api-version=2025-10-01-preview"

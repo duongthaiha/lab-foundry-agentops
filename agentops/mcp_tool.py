@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import os
+import re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Callable
 from uuid import uuid4
 
-from .contracts import ENVIRONMENTS, LabError, canonical, fields, fingerprint, parse_json, require
+from .contracts import ENVIRONMENTS, LabError, canonical, digest_value, fields, fingerprint, parse_json, require
 from .delivery_contracts import FEATURE, TOOL_NAME, TOOL_SCHEMA
 
 FIXTURES = {
@@ -18,7 +20,8 @@ FIXTURES = {
 }
 
 
-def dispatch(request: dict, environment: str, caller: str | None = None) -> dict | None:
+def dispatch(request: dict, environment: str, caller: str | None = None,
+             release_digest: str | None = None) -> dict | None:
     fields(request, {"jsonrpc", "method"}, {"id", "params"})
     require(request["jsonrpc"] == "2.0", "Unsupported JSON-RPC")
     method = request["method"]
@@ -53,6 +56,13 @@ def dispatch(request: dict, environment: str, caller: str | None = None) -> dict
         if caller is not None:
             payload["_auth"] = {"principal_digest": fingerprint({"principal_id": caller}),
                                 "trace_id": str(uuid4())}
+            if release_digest is not None:
+                digest_value(release_digest, "MCP release binding")
+                payload["_auth"]["release_digest"] = release_digest
+            logging.getLogger("agentops.mcp").info(canonical({
+                "event": "mcp.tool.completed", "environment": environment, "tool_name": TOOL_NAME,
+                **payload["_auth"],
+            }).decode().strip())
         result = {"structuredContent": payload,
                   "content": [{"type": "text", "text": canonical(payload).decode().strip()}],
                   "isError": False}
@@ -62,7 +72,6 @@ def dispatch(request: dict, environment: str, caller: str | None = None) -> dict
 
 
 def entra_verifier(tenant: str, audience: str, allowed_callers: set[str]) -> Callable[[str], str]:
-    import re
     import jwt
 
     require(re.fullmatch(r"[0-9a-f-]{36}", tenant) is not None, "Tenant GUID required")
@@ -99,13 +108,14 @@ def handler(environment: str, verify: Callable[[str], str]):
             return
 
         def do_GET(self):
-            self.send_response(405 if self.path == "/mcp" else 404)
+            self.send_response(405 if re.fullmatch(r"/mcp(?:/releases/[0-9a-f]{64})?", self.path) else 404)
             self.send_header("Allow", "POST")
             self.send_header("Content-Length", "0")
             self.end_headers()
 
         def do_POST(self):
-            if self.path != "/mcp":
+            route = re.fullmatch(r"/mcp(?:/releases/([0-9a-f]{64}))?", self.path)
+            if route is None:
                 self.send_error(404)
                 return
             try:
@@ -130,7 +140,7 @@ def handler(environment: str, verify: Callable[[str], str]):
             try:
                 require(self.headers.get_content_type() == "application/json", "JSON required")
                 request = parse_json(body)
-                result = dispatch(request, environment, caller)
+                result = dispatch(request, environment, caller, route.group(1))
                 status = 202 if result is None else 200
             except (LabError, ValueError, UnicodeError):
                 result = {"jsonrpc": "2.0", "id": request.get("id") if isinstance(request, dict) else None,
@@ -150,6 +160,7 @@ def main() -> None:
     parser.add_argument("--environment", choices=ENVIRONMENTS, required=True)
     parser.add_argument("--port", type=int, default=8080)
     args = parser.parse_args()
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     verify = entra_verifier(os.environ["AZURE_TENANT_ID"], os.environ["MCP_AUDIENCE"],
                             set(os.environ["MCP_ALLOWED_CALLER_IDS"].split(",")))
     with ThreadingHTTPServer(("0.0.0.0", args.port), handler(args.environment, verify)) as server:

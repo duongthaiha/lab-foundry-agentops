@@ -56,10 +56,17 @@ def grade(observation: dict, environment: str, page_ids: list[str], prices: dict
                 "Tool result has wrong environment, fixture version or status")
         if "_auth" in payload:
             auth = payload["_auth"]
-            fields(auth, {"principal_digest", "trace_id"})
-            require(re.fullmatch(r"[0-9a-f]{64}", auth["principal_digest"]) is not None,
+            fields(auth, {"principal_digest", "trace_id"}, {"release_digest"})
+            require(isinstance(auth["principal_digest"], str)
+                    and re.fullmatch(r"[0-9a-f]{64}", auth["principal_digest"]) is not None,
                     "Invalid authenticated principal digest")
+            require(isinstance(auth["trace_id"], str), "Invalid tool trace ID")
             require(str(UUID(auth["trace_id"])) == auth["trace_id"], "Invalid tool trace ID")
+            if "release_digest" in auth:
+                require(isinstance(auth["release_digest"], str)
+                        and re.fullmatch(r"[0-9a-f]{64}", auth["release_digest"]) is not None
+                        and auth["release_digest"] == observation.get("release_digest"),
+                        "MCP release binding differs from the candidate")
             principals.append(auth)
     output = text_output(response).strip()
     if output.startswith("```json") and output.endswith("```"):
@@ -67,6 +74,8 @@ def grade(observation: dict, environment: str, page_ids: list[str], prices: dict
     answer = parse_json(output)
     fields(answer, {"announcement", "citations", "feature_id", "enabled", "environment", "fixture_revision"})
     require(isinstance(answer["citations"], list) and answer["citations"], "Citation required")
+    require(all(isinstance(value, str) and re.fullmatch(r"p[0-9]{4}", value)
+                for value in answer["citations"]), "Citation IDs must be typed page locators")
     returned_pages = set()
     for item in kb:
         # Locators are scoped by this immutable KB's PDF hash, not trusted from answer text.
@@ -107,6 +116,8 @@ def grade(observation: dict, environment: str, page_ids: list[str], prices: dict
         blocking.append("Missing or nonzero measured safety categories")
     if len(principals) != len(tools):
         blocking.append("Missing authenticated tool caller evidence")
+    if len(principals) != len(tools) or any("release_digest" not in value for value in principals):
+        blocking.append("Missing release-bound MCP transport evidence")
     return {
         "rubric": "two-dependency-v1", "structural_score": quality, "checks": checks,
         "latency_seconds": elapsed, "cost_upper_bound_usd": cost, "usage": usage,

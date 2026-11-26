@@ -5,8 +5,8 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from azure.ai.projects.models import PromptAgentDefinition
-from agentops.contracts import LabError, canonical, fingerprint
-from agentops.delivery import controls, definition, matrix, require_live_gate, validate_target
+from agentops.contracts import LabError, canonical, fingerprint, parse_json
+from agentops.delivery import connections, controls, definition, matrix, require_live_gate, validate_target
 from agentops.delivery_azure import project_shape
 from agentops.delivery_contracts import FEATURE, TOOL_NAME, load, release, save
 from agentops.delivery_evaluation import grade
@@ -114,6 +114,38 @@ class DeliveryTests(unittest.TestCase):
         value["response"]["output"].append({"type": "local_shell_call"})
         with self.assertRaisesRegex(LabError, "Unexpected runtime capability"):
             grade(value, "dev", ["p0004"], PRICES, 1)
+
+    def test_transport_evidence_from_a_different_release_is_rejected(self):
+        value = observation()
+        value["release_digest"] = "a" * 64
+        call = value["response"]["output"][1]
+        payload = parse_json(call["output"])
+        payload["structuredContent"]["_auth"] = {
+            "principal_digest": "c" * 64, "trace_id": "aaaaaaaa-0000-0000-0000-aaaaaaaaaaaa",
+            "release_digest": "b" * 64}
+        call["output"] = canonical(payload).decode()
+        with self.assertRaisesRegex(LabError, "release binding"):
+            grade(value, "dev", ["p0004"], PRICES, 1)
+
+    def test_malformed_citation_is_a_domain_rejection(self):
+        value = observation()
+        part = value["response"]["output"][-1]["content"][0]
+        answer = parse_json(part["text"])
+        answer["citations"] = [{"text": "not a page locator"}]
+        part["text"] = canonical(answer).decode()
+        with self.assertRaisesRegex(LabError, "typed page locators"):
+            grade(value, "dev", ["p0004"], PRICES, 1)
+
+    def test_connection_and_runtime_tool_pin_the_same_release_route(self):
+        foundry = Mock()
+        foundry.target = {"search_endpoint": "https://unit.search.windows.net",
+                         "tool_mcp_url": "https://unit.azurecontainerapps.io/mcp",
+                         "tool_audience": "api://unit-test-only", "project_resource_id": "/synthetic-project"}
+        with patch("agentops.delivery.ensure") as ensure:
+            tools = connections(foundry, "a" * 64, {"kb": "kb-unit"})
+        target = foundry.target["tool_mcp_url"] + "/releases/" + "a" * 64
+        self.assertEqual(tools[1]["server_url"], target)
+        self.assertEqual(ensure.call_args_list[1].args[2]["properties"]["target"], target)
 
     def test_knowledge_readback_detects_content_drift(self):
         pages = [{"page_id": "p0001", "page_number": 1, "title": "Fixture",

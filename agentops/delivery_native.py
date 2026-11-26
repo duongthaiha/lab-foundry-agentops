@@ -132,6 +132,7 @@ class NativeRuntime:
             require(actual["version_indicator"] == session["version_indicator"], "Hosted session version changed")
         return {"response": response, "requested_version": version, "route_before": before,
                 "route_after": after, "identity_digest": after["identity_digest"],
+                "release_digest": digest,
                 "conversation_id": conversation.id, "session": session, "latency_seconds": elapsed,
                 "native_candidate_contract_verified": runtime != "harness",
                 "observed_at": utc_now()}

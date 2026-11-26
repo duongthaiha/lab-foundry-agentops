@@ -42,7 +42,14 @@ authentication requires signed Entra v2 tokens, exact tenant/audience and caller
 object-ID allowlist. Successful tool responses include a server-generated trace
 ID and a digest of the authenticated principal (never the token or object ID).
 Matching that digest against the expected deployed caller remains a live
-acceptance requirement. Configure the resource application to issue v2 tokens:
+acceptance requirement. Release-local connections bind to
+`/mcp/releases/<release-sha256>`; both their connection target and runtime tool URL
+use that exact path. Tool evidence and structured completion logs carry this
+server-observed release binding. The grader rejects a different release digest.
+Bare `/mcp` remains available for transport diagnostics, but cannot supply
+release-bound evidence. These records are neither signed export attestations
+nor substitutes for native serving/session verification.
+Configure the resource application to issue v2 tokens:
 the token audience is the application GUID, while the connection audience is
 its `api://` URI. Never expose an unauthenticated deployment or use test tokens.
 

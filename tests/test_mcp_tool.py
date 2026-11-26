@@ -71,6 +71,14 @@ class McpTransportTests(unittest.TestCase):
                     with urlopen(request, timeout=5) as response:
                         repeated = json.load(response)["result"]["structuredContent"]
                     self.assertNotEqual(payload["_auth"]["trace_id"], repeated["_auth"]["trace_id"])
+                    bound = Request(url + "/releases/" + "a" * 64, data=canonical(body),
+                                    headers={"Content-Type": "application/json", "Authorization": "Bearer unit-test-only"})
+                    with self.assertLogs("agentops.mcp", level="INFO") as logs, urlopen(bound, timeout=5) as response:
+                        bound_payload = json.load(response)["result"]["structuredContent"]
+                    self.assertEqual(bound_payload["_auth"]["release_digest"], "a" * 64)
+                    self.assertIn(bound_payload["_auth"]["trace_id"], logs.output[0])
+                    self.assertNotIn("unit-test-only", logs.output[0])
+                    self.assertNotIn("synthetic-test-caller", logs.output[0])
                 finally:
                     server.shutdown()
                     worker.join(timeout=5)
