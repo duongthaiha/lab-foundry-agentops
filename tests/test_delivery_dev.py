@@ -217,10 +217,15 @@ class DevPolicyTests(unittest.TestCase):
         _, binding, _ = configuration()
         key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
         other = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-        for mutation in (None, "user", "wrong-app", "signature", "expired"):
+        for mutation in (None, "cli-audience", "other-audience", "user", "wrong-app", "signature", "expired"):
             claims = {"ver": "1.0", "tid": GUID, "oid": GUID, "appid": GUID,
                       "iss": f"https://sts.windows.net/{GUID}/", "aud": "https://management.azure.com/",
                       "iat": int(time.time()) - 10, "nbf": int(time.time()) - 10, "exp": int(time.time()) + 600}
+            if mutation == "cli-audience":
+                # Observed live: azure-identity's Azure CLI tokens omit the trailing slash.
+                claims["aud"] = "https://management.azure.com"
+            if mutation == "other-audience":
+                claims["aud"] = "https://storage.azure.com"
             if mutation == "user":
                 claims["scp"] = "user_impersonation"
             if mutation == "wrong-app":
@@ -231,7 +236,7 @@ class DevPolicyTests(unittest.TestCase):
             credential = SimpleNamespace(get_token=lambda *a, **k: AccessToken(token, claims["exp"]))
             with patch("jwt.PyJWKClient") as jwks:
                 jwks.return_value.get_signing_key_from_jwt.return_value.key = key.public_key()
-                if mutation is None:
+                if mutation in (None, "cli-audience"):
                     verify_ci_identity(credential, binding)
                 else:
                     with self.subTest(mutation=mutation), self.assertRaises(LabError):

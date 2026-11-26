@@ -116,7 +116,7 @@ Foundry behaviour.
 
 ## CI identity findings from the first dev-smoke dispatches
 
-Observed on 2026-11-26 in the first two `dev-smoke.yml` runs. Neither run reached
+Observed on 2026-11-26 in the first three `dev-smoke.yml` runs. None reached
 the release journal, so no attempt was recorded and no Azure state changed.
 
 - **OIDC subject format.** Run 45903981856 failed at `azure/login` with
@@ -135,6 +135,14 @@ the release journal, so no attempt was recorded and no Azure state changed.
   tenant; `azure/login` selects the subscription, and `verify_ci_identity` still
   checks the token's tenant and application. A unit test pins the constructor
   arguments.
+- **ARM token audience.** Run 45905446127 failed in `verify_ci_identity` with
+  "Dev CI identity token could not be verified". The signature and issuer were
+  valid, but PyJWT raised `InvalidAudienceError`: azure-identity removes the
+  `/.default` suffix before calling the CLI, so the ARM token's `aud` is
+  `https://management.azure.com` with no trailing slash. The verifier now accepts
+  that ARM audience alongside the slash and legacy `management.core.windows.net`
+  forms. Other audiences, forged tokens, user tokens and other applications are
+  still rejected. Rehearsals skipped this check because they ran as the operator.
 
 ## Local evidence and limits
 
