@@ -131,6 +131,17 @@ class NativeDeliveryTests(unittest.TestCase):
         delivery.rollback(bundle["agent"])
         self.assertEqual(world.agents.update_details.call_count, 2)
 
+    def test_snapshot_accepts_omitted_instance_status_but_not_inactive_identity(self):
+        world = NativeFixture()
+        details = world.details()
+        del details["instance_identity"]["status"]
+        world.foundry.get_agent.side_effect = lambda name: copy.deepcopy(details)
+        self.assertEqual(world.runtime.snapshot("contoso-prompt")["version"], "1")
+        for identity in ({"principal_id": "synthetic-native-principal", "status": "disabled"}, {}):
+            details["instance_identity"] = identity
+            with self.subTest(identity=identity), self.assertRaises(LabError):
+                world.runtime.snapshot("contoso-prompt")
+
     def test_failed_consumer_check_retains_rollback_intent_before_mutation(self):
         world, journal, delivery, bundle, digest, definition = self.setup_delivery()
         delivery.evaluate(bundle, digest, definition, lambda item: {"full_gate_passed": True})

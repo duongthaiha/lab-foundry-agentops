@@ -27,7 +27,7 @@ TARGET = {"project_endpoint": PROJECT, "project_resource_id": ACCOUNT + "/projec
 
 def tools(digest):
     return [{"type": "mcp", "server_label": label, "server_url": url,
-             "allowed_tools": [tool_name], "require_approval": "never",
+             "allowed_tools": {"tool_names": [tool_name]}, "require_approval": "never",
              "project_connection_id": f"{label}-{digest[:20]}"}
             for label, url, tool_name in (
                 ("knowledge-base", TARGET["search_endpoint"] + "/knowledgebases/kb-" + "c" * 20

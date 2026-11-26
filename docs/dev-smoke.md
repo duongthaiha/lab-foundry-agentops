@@ -1,11 +1,11 @@
 # Dev-only unattended prompt deploy and graded smoke
 
-**Implemented, not deployed or enabled.** This is a separate, reversible
+**Dev foundation provisioned; CI enablement pending.** This is a separate, reversible
 exception to the reviewer restoration requirement for one bounded **dev prompt
 smoke**. It does not open the existing full-delivery or platform gates.
-Read-only inspection on 2026-11-26 found zero resources in the dev group.
-Dev reviewers remain deferred, exact-main restrictions remain, and admin bypass
-is disabled. No cloud resources, identity grants or settings were changed.
+After authorization on 2026-11-26 the operator provisioned only the dev inventory
+below and the dev CI identity, and rehearsed the smoke locally. Dev reviewers
+remain deferred, exact-main restrictions remain, and admin bypass is disabled.
 
 ## What the user needs to authorize
 
@@ -34,7 +34,7 @@ application's broader four-group authority for this job.
 | Resource | Proposed dev instance and bound |
 |---|---|
 | Foundry S0 account/project | `foudnry-agentops-lab-dev`, one isolated project, Entra-only |
-| Model | `gpt-5-mini` / `2025-08-07`, DataZoneStandard capacity 1-10 subject to actual minimum/quota; no embedding deployment |
+| Model | `gpt-5-mini` / `2025-08-07`, DataZoneStandard capacity at most 100; no embedding deployment. Capacity is a pay-per-token rate limit, not a fixed charge: at 10 (10K TPM/10 RPM) the KB's internal planning calls received 429 from short-window enforcement, and 100 was the tested working value |
 | Policy | `Microsoft.DefaultV2`, jailbreak prompt detection enabled and blocking; no policy relaxation |
 | AI Search | One Basic unit, one replica and partition; one hash-named PDF index, source and model-free extractive IQ KB |
 | MCP service | One Container Apps Consumption environment/app, 0.25 vCPU / 0.5 GiB, min 0 / max 1 replica; pinned reviewed image |
@@ -201,8 +201,14 @@ source page citation, correct typed fictional dev status, measured usage,
 latency and expected authenticated caller/release evidence are mandatory.
 An existing smoke agent must match exactly; its route is never silently repaired.
 
-A second authenticated model request evaluates the **exact observed answer**
-against the cited PDF pages. It has no tools and strict JSON output, requires
+A second authenticated model request evaluates the observed answer. Runtime
+citation markers (only exact `【…】` spans located by `url_citation`
+annotations) are removed; other answer text is judged unchanged. The announcement
+is judged against the cited PDF pages and the lab status fields against the
+authenticated tool result that the structural grade already matched to the
+fixture. Without that second evidence item, dev rehearsals scored the same
+correct answer between 65 and 100 because the judge treated the lab status as
+unsupported. It has no tools and strict JSON output, requires
 semantic score >=80 and zero Hate/SelfHarm/Sexual/Violence severities. Its versioned
 instructions/schema digest, subject/response digests, model, usage and result are
 recorded. This is a **custom model-based smoke evaluator**, not a verified Foundry
@@ -216,6 +222,30 @@ PDF bytes, raw answers, tokens or private IDs are published. Success always keep
 candidate/serving receipt is created. No contoso serving selector, test/prod,
 Hosted/harness, memory, full evaluator, or composite rollback behavior is claimed.
 The original `probe`, `verify-serving` and full promotion gates are unchanged.
+
+## Live service behaviour observed in dev rehearsals
+
+Operator rehearsals against the provisioned dev foundation (2026-11-26) found
+these differences from the documented request shapes. The code now handles each
+one without weakening a check:
+
+- The `Microsoft.DefaultV2` RAI policy returns 404 by name, so preflight lists
+  account policies and requires exactly one match and no `nextLink`.
+- RemoteTool connections persist `isSharedToAll` as false. It is still sent, but
+  excluded from read-back; access remains governed by project identity and RBAC.
+- Prompt agent MCP tools persist `allowed_tools` as `{"tool_names": [...]}`;
+  that canonical form is sent so read-back stays exact.
+- Agent details may omit `instance_identity.status`. A missing status is treated
+  as active when `state`/`configuration_state` are enabled and a principal ID is
+  present; an explicit non-active status still fails.
+- The Foundry MCP client probes `server/discover`, negotiates protocol
+  `2025-11-25` down to `2025-06-18`, sends `_meta`, and uses chunked request
+  bodies. The lab MCP server reads chunked bodies within its size limit.
+- MCP outputs arrive as rendered text: the KB returns `{"documents": [...]}`;
+  the lab tool returns its text JSON followed by an identical
+  `{"structuredResponse": ...}`. Any mismatch between the two is rejected.
+- `gpt-5-mini` used roughly 900-1,150 reasoning tokens per smoke turn, so all
+  model calls allow 4,096 output tokens. The $0.05 case check is unchanged.
 
 ## Stop, teardown, reset and restoring reviewers
 

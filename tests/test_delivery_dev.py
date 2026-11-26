@@ -14,16 +14,18 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 
 from agentops.contracts import LabError, canonical, fingerprint, parse_json
 from agentops.delivery import REPO
-from agentops.delivery_contracts import release
+from agentops.delivery_contracts import FEATURE, MAX_OUTPUT_TOKENS, release
 from agentops.delivery_dev import (
     JUDGE_SCHEMA, WORKFLOW, authorize, inspect_dev, judge_response, main, run_smoke, verify_ci_identity,
 )
+from agentops.mcp_tool import FIXTURES
 from test_delivery import PRICES, observation
 from test_delivery_native import Journal, NativeFixture
 
 NOW = datetime(2026, 11, 26, 12, tzinfo=timezone.utc)
 GUID = "11111111-2222-3333-4444-555555555555"
 PREFIX = f"/subscriptions/{GUID}/resourceGroups/foudnry-agentops-lab-dev/providers/"
+FIXTURE = {"feature_id": FEATURE, "environment": "dev", "backend": "deterministic-lab-fixture", **FIXTURES["dev"]}
 
 
 def configuration():
@@ -81,8 +83,8 @@ def infrastructure(binding):
         {"sku": {"name": "DataZoneStandard", "capacity": 10}, "properties": {
             "model": {"format": "OpenAI", "name": "gpt-5-mini", "version": "2025-08-07"},
             "raiPolicyName": "Microsoft.DefaultV2", "versionUpgradeOption": "NoAutoUpgrade"}},
-        {"properties": {"contentFilters": [{"name": "Jailbreak", "source": "Prompt",
-                                            "enabled": True, "blocking": True}]}},
+        {"value": [{"name": "Microsoft.DefaultV2", "properties": {"contentFilters": [
+            {"name": "Jailbreak", "source": "Prompt", "enabled": True, "blocking": True}]}}]},
         {"name": "unit", "location": "swedencentral", "sku": {"name": "basic"},
          "properties": {"disableLocalAuth": True, "replicaCount": 1, "partitionCount": 1}},
         {"location": "swedencentral", "sku": {"name": "Standard_LRS"},
@@ -164,12 +166,22 @@ class DevPolicyTests(unittest.TestCase):
 
     def test_resource_preflight_is_read_only_and_refuses_auth_policy_and_size_drift(self):
         _, binding, _ = configuration()
-        for mutation in (None, "auth", "policy", "endpoint", "scale", "caller"):
+        for mutation in (None, "max-capacity", "auth", "policy", "policy-missing", "policy-duplicate",
+                         "policy-paged", "capacity", "endpoint", "scale", "caller"):
             resources = infrastructure(binding)
+            policies = resources[3]
             if mutation == "auth":
                 resources[0]["properties"]["disableLocalAuth"] = False
             elif mutation == "policy":
-                resources[3]["properties"]["contentFilters"][0]["blocking"] = False
+                policies["value"][0]["properties"]["contentFilters"][0]["blocking"] = False
+            elif mutation == "policy-missing":
+                policies["value"][0]["name"] = "Microsoft.Default"
+            elif mutation == "policy-duplicate":
+                policies["value"].append(copy.deepcopy(policies["value"][0]))
+            elif mutation == "policy-paged":
+                policies["nextLink"] = "https://management.azure.com/next"
+            elif mutation in ("max-capacity", "capacity"):
+                resources[2]["sku"]["capacity"] = 100 if mutation == "max-capacity" else 101
             elif mutation == "endpoint":
                 resources[1]["properties"]["endpoints"]["AI Foundry API"] += "-other"
             elif mutation == "scale":
@@ -178,7 +190,7 @@ class DevPolicyTests(unittest.TestCase):
                 resources[6]["properties"]["template"]["containers"][0]["env"][-1]["value"] = "other"
             foundry = Mock()
             foundry.arm.request.side_effect = resources
-            if mutation is None:
+            if mutation in (None, "max-capacity"):
                 self.assertEqual(inspect_dev(foundry, binding), fingerprint({"principal_id": GUID}))
             else:
                 with self.subTest(mutation=mutation), self.assertRaises(LabError):
@@ -334,7 +346,7 @@ class DevSmokeTests(unittest.TestCase):
         self.assertTrue(all(request.headers["Authorization"] == "Bearer offline-token" for request in requests))
         body = parse_json(requests[-1].content)
         self.assertEqual(body["max_tool_calls"], 2)
-        self.assertEqual(body["max_output_tokens"], 1024)
+        self.assertEqual(body["max_output_tokens"], MAX_OUTPUT_TOKENS)
         self.assertEqual(body["conversation"], "wire-conversation")
         self.assertFalse({"agent_reference", "model", "previous_response_id"} & body.keys())
 
@@ -356,14 +368,19 @@ class DevSmokeTests(unittest.TestCase):
                 httpx.Client(transport=httpx.MockTransport(wire)) as http:
             foundry = SimpleNamespace(target=binding["target"], client=Mock())
             foundry.client.get_openai_client.side_effect = lambda **kwargs: project.get_openai_client(http_client=http, **kwargs)
-            structural = {"citations": ["p0004"], "cost_upper_bound_usd": 0.001}
+            structural = {"citations": ["p0004"], "cost_upper_bound_usd": 0.001, "fixture": FIXTURE}
             result = judge_response(foundry, bundle, {"response": observed}, pages, structural, Mock())
         body = parse_json(requests[0].content)
         self.assertEqual(requests[0].headers["Authorization"], "Bearer offline-token")
         self.assertEqual(body["text"]["format"]["schema"], JUDGE_SCHEMA)
         self.assertEqual(body["tools"], [])
         self.assertFalse(body["store"])
-        self.assertEqual(parse_json(body["input"])["answer"], observed["output"][-1]["content"][0]["text"])
+        self.assertEqual(body["max_output_tokens"], MAX_OUTPUT_TOKENS)
+        evidence = parse_json(body["input"])
+        self.assertEqual(evidence["answer"], observed["output"][-1]["content"][0]["text"])
+        # The lab half of the answer is judged against the separately verified tool fixture.
+        self.assertEqual(evidence["lab_fixture_result"], FIXTURE)
+        self.assertEqual(evidence["source_pages"], pages)
         self.assertEqual(result["subject_digest"], fingerprint(observed))
         self.assertEqual(result["quality"], 0.8)
         self.assertNotIn("source_pages", result)
@@ -391,7 +408,7 @@ class DevSmokeTests(unittest.TestCase):
                 model_dump=lambda **unused: response)
             with self.subTest(mutation=mutation), self.assertRaises(LabError):
                 judge_response(world.foundry, bundle, {"response": observed}, pages,
-                               {"citations": ["p0004"], "cost_upper_bound_usd": 0.001}, Mock())
+                               {"citations": ["p0004"], "cost_upper_bound_usd": 0.001, "fixture": FIXTURE}, Mock())
 
 
 if __name__ == "__main__":

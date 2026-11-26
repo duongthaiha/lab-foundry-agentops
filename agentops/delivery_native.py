@@ -11,7 +11,7 @@ from azure.core.exceptions import ResourceNotFoundError
 
 from .contracts import ENVIRONMENTS, digest_value, fields, fingerprint, instant, require, utc_now
 from .delivery_azure import project_shape
-from .delivery_contracts import validate
+from .delivery_contracts import MAX_OUTPUT_TOKENS, validate
 
 
 def runtime_of(definition: dict) -> str:
@@ -49,8 +49,11 @@ class NativeRuntime:
     def snapshot(self, name: str) -> dict:
         details = self.foundry.get_agent(name)
         require(details is not None, "A reviewed serving baseline must be provisioned first")
+        # The live service may omit identity status; operational `state` already reflects
+        # identity- or blueprint-derived disablement, and an explicit non-active status still fails.
+        instance = details.get("instance_identity") or {}
         require(details["state"] == "enabled" and details["configuration_state"] == "enabled"
-                and details["instance_identity"].get("status") == "active", "Native agent or identity is not enabled")
+                and instance.get("status", "active") == "active", "Native agent or identity is not enabled")
         return {"version": selected(details), "identity_digest": identity(details),
                 "endpoint_digest": fingerprint(details["agent_endpoint"])}
 
@@ -99,7 +102,7 @@ class NativeRuntime:
                        digest: str, expected_serving: dict, on_session: Callable[[dict], None]) -> dict:
         before = self.snapshot(name)
         require(before == expected_serving, "Serving drift before exact-version invocation")
-        kwargs = {"input": question, "max_output_tokens": 1024, "metadata": {"release_digest": digest}}
+        kwargs = {"input": question, "max_output_tokens": MAX_OUTPUT_TOKENS, "metadata": {"release_digest": digest}}
         session = None
         if runtime == "hosted":
             session = self.session(name, version, on_session)
@@ -145,7 +148,7 @@ class NativeRuntime:
         require(before == expected, "Serving drift before consumer invocation")
         version = self.foundry.get_version(name, before["version"])
         runtime = runtime_of(version["definition"])
-        kwargs = {"input": question, "max_output_tokens": 1024,
+        kwargs = {"input": question, "max_output_tokens": MAX_OUTPUT_TOKENS,
                   "metadata": {"operation_release_digest": operation_digest, "verification": "native-serving"}}
         if runtime == "harness":
             kwargs["extra_headers"] = {"Foundry-Features": "MicrosoftCopilot=V1Preview"}

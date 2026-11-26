@@ -1,7 +1,9 @@
 import json
+import socket
 import threading
 import time
 import unittest
+from http.client import HTTPConnection
 from http.server import ThreadingHTTPServer
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
@@ -84,10 +86,64 @@ class McpTransportTests(unittest.TestCase):
                     worker.join(timeout=5)
                     self.assertFalse(worker.is_alive())
 
+    def test_chunked_requests_are_bounded_and_outcomes_are_logged_without_secrets(self):
+        def verify(header):
+            if header != "Bearer unit-test-only":
+                raise LabError("Caller is not authorized in this environment: principal_digest=0123456789abcdef")
+            return "synthetic-test-caller"
+        with ThreadingHTTPServer(("127.0.0.1", 0), handler("dev", verify)) as server:
+            worker = threading.Thread(target=server.serve_forever)
+            worker.start()
+            try:
+                def post(chunks, authorization):
+                    connection = HTTPConnection("127.0.0.1", server.server_port, timeout=5)
+                    try:
+                        connection.request("POST", "/mcp", body=iter(chunks), encode_chunked=True, headers={
+                            "Content-Type": "application/json", "Authorization": authorization})
+                        response = connection.getresponse()
+                        return response.status, response.read()
+                    finally:
+                        connection.close()
+
+                def raw(head):
+                    with socket.create_connection(("127.0.0.1", server.server_port), timeout=5) as sock:
+                        sock.sendall(head)
+                        data = b""
+                        while chunk := sock.recv(4096):
+                            data += chunk
+                    return data.split(b"\r\n", 1)[0]
+
+                initialize = canonical({"jsonrpc": "2.0", "id": 1, "method": "initialize",
+                                        "params": {"protocolVersion": "2099-01-01", "_meta": {"progressToken": 1}}})
+                with self.assertLogs("agentops.mcp", level="INFO") as logs:
+                    status, data = post([initialize[:10], initialize[10:]], "Bearer unit-test-only")
+                    self.assertEqual((status, json.loads(data)["result"]["protocolVersion"]), (200, "2025-06-18"))
+                    self.assertEqual(post([initialize], "Bearer secret-token")[0], 401)
+                    prefix = b"POST /mcp HTTP/1.1\r\nHost: test\r\nContent-Type: application/json\r\n"
+                    self.assertIn(b" 400 ", raw(prefix + b"Transfer-Encoding: chunked\r\n\r\nFFFFF\r\n"))
+                    self.assertIn(b" 400 ", raw(prefix + b"Transfer-Encoding: chunked\r\nContent-Length: 5\r\n\r\n"))
+                records = [json.loads(line.split(":", 2)[2]) for line in logs.output]
+                self.assertEqual([(r["status"], r["framing"]) for r in records],
+                                 [(200, "chunked"), (401, "chunked"), (400, "chunked"), (400, "chunked")])
+                self.assertEqual(records[0]["param_keys"], ["_meta", "protocolVersion"])
+                self.assertEqual(records[2]["reason"], "body: Request is missing or too large")
+                self.assertEqual(records[3]["reason"], "body: Unsupported transfer encoding")
+                self.assertNotIn("secret-token", "".join(logs.output))
+                self.assertNotIn("synthetic-test-caller", "".join(logs.output))
+            finally:
+                server.shutdown()
+                worker.join(timeout=5)
+                self.assertFalse(worker.is_alive())
+
     def test_initialization_and_tool_schema_exclude_writes(self):
         initialized = dispatch({"jsonrpc": "2.0", "id": 1, "method": "initialize",
                                 "params": {"protocolVersion": "2025-03-26"}}, "dev")
         self.assertEqual(initialized["result"]["protocolVersion"], "2025-03-26")
+        with self.assertRaises(LabError):
+            dispatch({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": ""}}, "dev")
+        called = dispatch({"jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": {
+            "name": TOOL_NAME, "arguments": {"feature_id": FEATURE}, "_meta": {"progressToken": 5}}}, "dev")
+        self.assertFalse(called["result"]["isError"])
         result = dispatch({"jsonrpc": "2.0", "id": 2, "method": "tools/list"}, "dev")
         self.assertEqual(len(result["result"]["tools"]), 1)
         self.assertTrue(result["result"]["tools"][0]["annotations"]["readOnlyHint"])
