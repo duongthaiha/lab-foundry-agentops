@@ -1,7 +1,11 @@
 # Backlog coverage and recommendation findings
 
 **The full lab is incomplete. No recommendation is marked live-validated.**
-Local tests exercise controller logic and synthetic state only. The received
+Local tests exercise controller logic, synthetic state, delivery contracts and
+localhost MCP transport, not Azure runtime behavior. The new
+[three-track delivery milestone](delivery-demo.md) records the public PDF
+fingerprint, implemented adapters and remaining native-serving/safety gates.
+The received
 backlog identifies the source as `docs\ai-ml\guide\foundry-agentops.md` with article
 metadata date 2026-08-19; its exact Git revision has not been supplied/verified.
 Do not treat this source map as a line-by-line review of an unread revision.

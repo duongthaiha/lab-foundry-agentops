@@ -2,8 +2,13 @@
 
 **No agent runtime has been tested.** Dependency setup completed after explicit
 renewed approval. Management-plane model/quota/policy checks succeeded and GitHub
-required-reviewer environments are configured. See [live gates](live-gates.md).
+required-reviewer environments were configured and later explicitly deferred
+for dry-run-only work. The platform workflow remains disabled. See [live gates](live-gates.md).
 Management-plane availability and documentation do not prove runtime behavior.
+
+The new [IQ/MCP delivery milestone](delivery-demo.md) supplies real transport
+code and public PDF preparation, but does not change the live verdicts below.
+Native serving acceptance is distinct from release-local dependency probes.
 
 | Area | Prompt | Hosted | Microsoft Copilot harness |
 |---|---|---|---|

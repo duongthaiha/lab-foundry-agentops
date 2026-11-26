@@ -3,7 +3,9 @@
 ## Preconditions and evidence level
 
 Use Python 3.11+ in the assigned worktree, with synthetic data only. No package
-installation or Azure login is needed. `--mode simulated` is mandatory.
+installation or Azure login is needed for the simulator. The complete test suite
+now requires `requirements-live.txt` in the isolated environment described in the
+[delivery walkthrough](delivery-demo.md). For this runbook, `--mode simulated` is mandatory.
 `--mode live` returns a nonzero exit with a capability error and does not create
 local state. The CLI is not a production serving router or a substitute for
 unsupported Foundry behavior.

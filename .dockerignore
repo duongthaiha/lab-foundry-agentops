@@ -1,0 +1,6 @@
+*
+!agentops/
+!agentops/*.py
+!requirements-live.txt
+!Dockerfile.hosted
+!Dockerfile.mcp
