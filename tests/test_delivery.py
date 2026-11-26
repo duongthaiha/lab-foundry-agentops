@@ -6,7 +6,7 @@ from unittest.mock import Mock, patch
 
 from azure.ai.projects.models import PromptAgentDefinition
 from agentops.contracts import LabError, canonical, fingerprint, parse_json
-from agentops.delivery import connections, controls, definition, matrix, require_live_gate, validate_target
+from agentops.delivery import connections, controls, definition, matrix, require_live_gate, validate_target, verify_source_revision
 from agentops.delivery_azure import project_shape
 from agentops.delivery_contracts import FEATURE, TOOL_NAME, load, release, save
 from agentops.delivery_evaluation import grade
@@ -44,6 +44,18 @@ SAFETY = dict.fromkeys(("Hate", "SelfHarm", "Sexual", "Violence"), 0)
 
 
 class DeliveryTests(unittest.TestCase):
+    def test_preparation_refuses_mismatched_or_dirty_source_revision(self):
+        revision = "a" * 40
+        for head, changes in ((revision, " M agentops/delivery.py"), (revision, "?? untracked.py"), ("b" * 40, "")):
+            with patch("agentops.delivery.subprocess.run", side_effect=[
+                Mock(returncode=0, stdout=head), Mock(returncode=0, stdout=changes),
+            ]), self.assertRaisesRegex(LabError, "clean source checkout"):
+                verify_source_revision(revision)
+        with patch("agentops.delivery.subprocess.run", side_effect=[
+            Mock(returncode=0, stdout=revision), Mock(returncode=0, stdout=""),
+        ]):
+            verify_source_revision(revision)
+
     def test_immutable_bundle_and_three_definitions(self):
         tools = [{"server_label": "knowledge-base"}, {"server_label": "lab-tools"}]
         for runtime in ("prompt", "hosted", "harness"):

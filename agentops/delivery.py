@@ -22,6 +22,21 @@ from .delivery_knowledge import MCP_API, acquire_source, materialize, verify_kno
 REPO = "duongthaiha/lab-foundry-agentops"
 
 
+def verify_source_revision(revision: str) -> None:
+    require(re.fullmatch(r"[0-9a-f]{40}", revision) is not None, "Full source revision required")
+    root = Path(__file__).resolve().parent.parent
+    for args, expected in ((["rev-parse", "HEAD"], revision),
+                           (["status", "--porcelain", "--untracked-files=normal"], "")):
+        try:
+            result = subprocess.run(["git", "-C", str(root), *args],
+                                    capture_output=True, text=True, timeout=30)
+        except subprocess.TimeoutExpired as exc:
+            raise LabError("Git source verification timed out") from exc
+        require(result.returncode == 0, "Git source verification failed")
+        require(result.stdout.strip() == expected,
+                "Preparation requires the exact HEAD revision and a clean source checkout")
+
+
 def gh(path: str) -> dict:
     result = subprocess.run(["gh", "api", path], capture_output=True, text=True, timeout=30)
     require(result.returncode == 0, "GitHub gate read failed")
@@ -228,12 +243,14 @@ def main() -> int:
         elif args.command == "prepare":
             require(args.output.resolve().is_relative_to((Path.cwd() / ".lab").resolve()),
                     "Keep downloaded publisher content inside ignored .lab")
+            verify_source_revision(args.source_revision)
             source_hash, pages = acquire_source(args.output / "sources")
             value = release(args.runtime, args.source_revision, source_hash, image=args.image,
                             negative=args.negative)
             path, digest = save(value, args.output / "releases")
             result = {"evidence_type": "local-preparation", "bundle": str(path), "digest": digest,
-                      "pdf_sha256": source_hash, "page_count": len(pages), "live_validation": False}
+                      "pdf_sha256": source_hash, "page_count": len(pages),
+                      "source_checkout_verified": True, "live_validation": False}
         else:
             gate = require_live_gate(args.approved_run_id)
             value = load(args.bundle, args.digest)

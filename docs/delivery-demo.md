@@ -68,8 +68,11 @@ does not prove image existence and is not deployment evidence.
 `agentops.delivery_contracts` creates canonical digest-named release files.
 Environment endpoints, tenant/resource identifiers, state and prices are separate
 private bindings. Reuse identical release bytes across dev, test and labprod;
-never rebuild during promotion. At present the source commit is caller-supplied;
-signed provenance and source-to-image attestation are still missing.
+never rebuild during promotion. `prepare` verifies that the requested source
+commit is the executing checkout's HEAD and that tracked and untracked source
+are clean before acquiring the source or producing a release. This is local
+source verification, not signed provenance or source-to-image attestation;
+those remain missing.
 
 `delivery_knowledge` defines a hash-named Search index, search-index knowledge
 source and model-free IQ KB. It compares desired properties and exact page
