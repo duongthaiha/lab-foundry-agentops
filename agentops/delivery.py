@@ -201,6 +201,7 @@ def matrix() -> dict:
         "tracks": {runtime: {
             "iq_mcp": "adapter-implemented-not-live-validated",
             "distinct_mcp_tool": "adapter-implemented-not-live-validated",
+            "toolbox_lifecycle": "sdk-contract-tested-not-runtime-integrated",
             "native_controller": "contract-tested-not-wired-to-live-operator",
             "native_consumer": "sdk-wire-tested-protected-command-disabled",
             "native_serving_cutover": "unfulfilled",

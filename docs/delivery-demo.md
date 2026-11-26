@@ -100,9 +100,33 @@ not been verified against Azure or competing remote writers.
 `delivery` binds TWO explicitly allowlisted RemoteTool connections to each
 track: the IQ MCP endpoint and the distinct tool endpoint. These bindings use
 project managed identity. That is not proof of runtime/end-user identity
-forwarding, cross-environment isolation, or least-privilege access. Native
-release-local toolbox packaging and shared-default experiments are not yet
-implemented.
+forwarding, cross-environment isolation, or least-privilege access.
+
+`delivery_toolbox` now implements native release-local toolbox packaging and
+read-back with explicit policy and connection bindings. Each release gets a
+separately named toolbox with exactly one immutable version and a pinned
+`/versions/<version>/mcp?api-version=v1` receipt. The adapter never publishes a
+shared default, deletes a retained version, or repairs drift by overwriting it.
+It rejects additional versions, changed defaults, hidden tool/auth overrides,
+unexpected skills, or policy drift. The account-local `Microsoft.DefaultV2`
+binding must be supplied explicitly; this does not prove that the policy exists
+or that its jailbreak controls have passed live preflight.
+
+`ToolboxDelivery` uses the coordination journal and lease, saves intent before
+creation, and blocks retries after an uncertain result. Its reconciliation
+only reads the existing resource; a missing resource does not authorize another
+create request. Contract tests show that changing a default changes an
+unpinned reference's resolution while a retained version reference stays fixed.
+This is **SDK-boundary evidence, not an observed runtime effect**. The actual
+SDK create/list/get URLs, payload and bearer authentication are tested offline.
+
+Toolbox consumption is **not wired into runtime definitions or the protected
+CLI** yet; the existing two direct MCP bindings remain unchanged. Current
+documentation differs on namespacing and response transport details. A live
+`tools/list` contract, schemas, version-pinned MCP transport and caller
+authorization must be verified before swapping those bindings. Do not invent a
+tool-name separator, treat a control-plane receipt as a successful tool call, or
+use a mutable default endpoint to claim rollback safety.
 
 `delivery_evaluation` rejects absent/failed calls, undeclared runtime capabilities, wrong fixture identity,
 unreturned citations, missing token usage, route drift and exceeded limits.

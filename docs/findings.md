@@ -43,7 +43,7 @@ Do not treat this source map as a line-by-line review of an unread revision.
 | AO-27 | Three knowledge topology alternatives and conditional decision | Validated support/ACL/costs, named owner, final architecture |
 | AO-28 | Component contracts, external bindings, retention checks | Separate live component delivery/permissions and compatibility tests |
 | AO-29 | Local multi-consumer reference isolation | Same actual KB instance, ACLs, freshness and independent live rollout |
-| AO-30 | Toolbox contracts and retained side-by-side references | Tool traces/schema/auth failures and observed mutable-default effects |
+| AO-30 | Native release-local toolbox snapshots, pinned receipts, drift rejection and uncertain-create reconciliation | Runtime toolbox integration, live traces/schema/auth and observed mutable-default effects |
 | AO-31 | Durable synthetic journal, partial failure, repair, delete/expiry | Native writer capture, actual migration and lossless rollback proof |
 
 ## Source recommendation map
@@ -58,7 +58,7 @@ Do not treat this source map as a line-by-line review of an unread revision.
 | S6 Pipeline/coordination | Caveat; controller CI exercised | Blob lease/CAS adapter is not live distributed-contention evidence; uncoordinated runtime/portal writers remain outside the lease |
 | S7 Environment strategy | Caveat; locally exercised | Synthetic scope rejection is not Azure account/network isolation evidence |
 | S8 Evaluation | Caveat; locally exercised | Exact context and thresholds tested with fabricated metrics, not LLM quality |
-| S9 Tools/toolboxes | Untested live | Shared mutable defaults, call identities, schemas/traces/approval behavior need actual observations |
+| S9 Tools/toolboxes | Native lifecycle contract-tested; untested live | Version-pinned receipts and read-only default-resolution tests do not prove actual calls, schemas, authorization or shared-consumer effects |
 | S10 Knowledge/Foundry IQ | Untested live | Reuse/ACL/ingestion ordering/content rollback claims remain conditional |
 | S11 Memory | Native API contracts tested; untested live | Scoped extraction/deletion/reconciliation HTTP tests do not establish runtime isolation or expiry; nonempty migration cannot preserve original TTL; harness unsupported with no substitute |
 | S12 Security/identity | Bootstrap verified; live gate deferred | Four scoped grants and secretless federation; reviewer removal is dry-run-only, real workflow disabled |
@@ -81,7 +81,7 @@ all three Bicep templates. The separate push workflow also passed. These are
 remote controller/build checks, not live Azure integration tests.
 
 The subsequent native-consumer milestone is described in
-[delivery-demo.md](delivery-demo.md). The expanded local suite contains 82 tests,
+[delivery-demo.md](delivery-demo.md). The native-consumer milestone's local suite contains 82 tests,
 including the real Projects/OpenAI SDK HTTP serialization and bearer-auth flow
 against offline responses for all three tracks. Serving observations retain
 response/conversation/session IDs and selector fingerprints, not model output.
