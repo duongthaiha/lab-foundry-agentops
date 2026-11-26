@@ -317,6 +317,21 @@ class DevSmokeTests(unittest.TestCase):
             with self.assertRaisesRegex(LabError, "reconcile before another run"):
                 self.execute(setup, "124-1")
 
+    def test_lab_rejection_reason_and_sanitized_keys_reach_private_journal_only(self):
+        setup = smoke_fixture()
+        response = setup[5]
+        answer = parse_json(response["output"][2]["content"][0]["text"])
+        answer.update({"notes": "extra", "bad key with spaces": 1})
+        response["output"][2]["content"][0]["text"] = canonical(answer).decode()
+        with self.assertRaises(LabError) as raised:
+            self.execute(setup)
+        self.assertEqual(str(raised.exception), "Unexpected fields in object")
+        attempt = setup[4].state["dev_smoke"][setup[0]["id"]]["attempts"]["123-1"]
+        self.assertEqual(attempt["status"], "reconcile-required")
+        self.assertEqual(attempt["reason"], "Unexpected fields in object")
+        self.assertEqual(attempt["error_detail"],
+                         {"unexpected_fields": ["<non-identifier>", "notes"], "unexpected_count": 2})
+
     def test_lease_or_policy_loss_stops_before_agent_create(self):
         setup = smoke_fixture()
         policy, binding, bundle, world, journal, _, pages, _ = setup

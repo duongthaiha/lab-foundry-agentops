@@ -403,6 +403,12 @@ def run_smoke(foundry, journal, policy: dict, binding: dict, bundle: dict, pages
             return attempt
         except Exception as exc:
             attempt.update({"status": "reconcile-required", "error_type": type(exc).__name__})
+            if isinstance(exc, LabError):
+                # LabError messages are public-safe (main prints them); SDK errors may not be,
+                # so those keep only their type.
+                attempt["reason"] = str(exc)[:300]
+                if exc.detail:
+                    attempt["error_detail"] = exc.detail
             journal.save(state)
             raise
 

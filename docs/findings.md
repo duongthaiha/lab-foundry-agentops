@@ -67,7 +67,7 @@ Do not treat this source map as a line-by-line review of an unread revision.
 | S10 Knowledge/Foundry IQ | Untested live | Reuse/ACL/ingestion ordering/content rollback claims remain conditional |
 | S11 Memory | Native API contracts tested; untested live | Scoped extraction/deletion/reconciliation HTTP tests do not establish runtime isolation or expiry; nonempty migration cannot preserve original TTL; harness unsupported with no substitute |
 | S12 Security/identity | Bootstrap verified; live gate deferred | Existing platform stays disabled; bounded unattended dev-smoke exception is implemented. Lab resources use the MCAPS `SecurityControl=Ignore` exclusion with compensating controls ([below](#tenant-governance-finding-mcaps-storage-network-modify)) |
-| S13 Observability | Untested live | Attempt history is not runtime telemetry, monitoring or an alert demonstration |
+| S13 Observability | Monitoring templated; live use in progress | `monitoring.bicep` adds Application Insights server-side agent tracing and resource diagnostic settings; attempt history alone is not runtime telemetry, and no alerting is demonstrated |
 | S14 Preview/constraints | Documentation and management plane checked | Selected models/quota observed; runtime/API entitlement still untested |
 
 ## Tenant governance finding: MCAPS storage network modify
@@ -104,7 +104,8 @@ Foundry behaviour.
   Insights, and the ACR admin user disabled.
 - **Residual gap.** Endpoints stay internet-reachable, protected only by Entra
   authentication. Newly tagged environments do not get the MCAPS policy
-  diagnostic settings.
+  diagnostic settings; `infra/monitoring.bicep` declares the lab's own
+  `lab-logs` settings instead.
 - **Production guidance.** Do not rely on the exclusion tag. Keep storage private
   and run delivery from private networking: self-hosted runners in a VNet with
   private endpoints, or managed-network runners.
@@ -143,6 +144,23 @@ the release journal, so no attempt was recorded and no Azure state changed.
   that ARM audience alongside the slash and legacy `management.core.windows.net`
   forms. Other audiences, forged tokens, user tokens and other applications are
   still rejected. Rehearsals skipped this check because they ran as the operator.
+
+## First journaled dev-smoke attempt
+
+Run 45906360177 (2026-11-26) passed every gate, opened journal attempt
+`45906360177-1`, created the release agent and connections, and received an
+answer. Grading then rejected it with "Unexpected fields in object": the answer
+JSON contained a key outside the fixed contract. The strict grader was right to
+fail closed. The attempt is `reconcile-required` and blocks further runs until it
+is reviewed. The public log could not show which key, and the journal did not
+record the reason either. Two changes follow:
+
+- the private journal now records the rejection `reason` and a sanitized
+  `error_detail` (field names only, never values);
+- Application Insights tracing and resource diagnostic settings were added
+  (`infra/monitoring.bicep`; see
+  [debugging](dev-smoke.md#debugging-with-application-insights-and-logs)) so
+  the operator can inspect the agent's actual output in a protected store.
 
 ## Local evidence and limits
 
