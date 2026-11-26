@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+from azure.ai.projects.models import PromptAgentDefinition
 from agentops.contracts import LabError, canonical, fingerprint
 from agentops.delivery import controls, definition, matrix, require_live_gate, validate_target
 from agentops.delivery_azure import project_shape
@@ -56,6 +57,10 @@ class DeliveryTests(unittest.TestCase):
                     self.assertEqual(built["harness"], {"type": "microsoft_copilot_preview"})
                     self.assertNotIn("container_configuration", built)
                     self.assertEqual(value["memory"], "unsupported-no-substitute")
+                    serialized = PromptAgentDefinition(built).as_dict()
+                    self.assertEqual(serialized["tools"][-1], {
+                        "type": "microsoft_copilot_toolset_preview",
+                        "default_config": {"enabled": False}, "configs": []})
                 elif runtime == "hosted":
                     self.assertEqual(built["container_configuration"]["image"], image)
                 else:
@@ -103,6 +108,12 @@ class DeliveryTests(unittest.TestCase):
         self.assertFalse(result["full_gate_passed"])
         self.assertNotIn("announcement", result)
         self.assertNotIn("Microsoft announced", canonical(result).decode())
+
+    def test_undeclared_runtime_capability_is_rejected(self):
+        value = observation()
+        value["response"]["output"].append({"type": "local_shell_call"})
+        with self.assertRaisesRegex(LabError, "Unexpected runtime capability"):
+            grade(value, "dev", ["p0004"], PRICES, 1)
 
     def test_knowledge_readback_detects_content_drift(self):
         pages = [{"page_id": "p0001", "page_number": 1, "title": "Fixture",

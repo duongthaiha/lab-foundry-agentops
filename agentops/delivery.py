@@ -124,6 +124,10 @@ def definition(bundle: dict, tools: list[dict], target: dict) -> dict:
               "instructions": bundle["instructions"], "tools": tools}
     if bundle["runtime"] == "harness":
         result["harness"] = {"type": "microsoft_copilot_preview"}
+        result["tools"] = [*tools, {
+            "type": "microsoft_copilot_toolset_preview",
+            "default_config": {"enabled": False}, "configs": [],
+        }]
     if bundle["negative_control"]:
         result["tool_choice"] = "none"
         result["instructions"] = 'Return only {"announcement":"negative control"}. Do not call tools.'
@@ -180,10 +184,14 @@ def matrix() -> dict:
         "tracks": {runtime: {
             "iq_mcp": "adapter-implemented-not-live-validated",
             "distinct_mcp_tool": "adapter-implemented-not-live-validated",
+            "native_controller": "contract-tested-not-wired-to-live-operator",
             "native_serving_cutover": "unfulfilled",
             "native_rollback": "unfulfilled",
             "memory": "unsupported-no-substitute" if runtime == "harness" else "unfulfilled",
+            "memory_api": "unsupported-no-substitute" if runtime == "harness" else "contract-tested-not-runtime-integrated",
         } for runtime in RUNTIMES},
+        "cells": [{"runtime": runtime, "environment": environment, "live_status": "not-run"}
+                  for runtime in RUNTIMES for environment in ENVIRONMENTS],
         "boundary": "Dependency probes do not satisfy the native-serving acceptance criterion.",
     }
 

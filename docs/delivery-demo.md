@@ -39,7 +39,10 @@ returns disabled/`test-2`, and labprod returns disabled/`labprod-1`. These are n
 Microsoft product availability statements. The HTTP transport is real JSON-RPC;
 unit tests run actual localhost servers, not Azure agents. Production handler
 authentication requires signed Entra v2 tokens, exact tenant/audience and caller
-object-ID allowlist. Configure the resource application to issue v2 tokens:
+object-ID allowlist. Successful tool responses include a server-generated trace
+ID and a digest of the authenticated principal (never the token or object ID).
+Matching that digest against the expected deployed caller remains a live
+acceptance requirement. Configure the resource application to issue v2 tokens:
 the token audience is the application GUID, while the connection audience is
 its `api://` URI. Never expose an unauthenticated deployment or use test tokens.
 
@@ -79,7 +82,7 @@ forwarding, cross-environment isolation, or least-privilege access. Native
 release-local toolbox packaging and shared-default experiments are not yet
 implemented.
 
-`delivery_evaluation` rejects absent/failed calls, wrong fixture identity,
+`delivery_evaluation` rejects absent/failed calls, undeclared runtime capabilities, wrong fixture identity,
 unreturned citations, missing token usage, route drift and exceeded limits.
 Its five-check **structural score is not semantic answer quality**. Keyword
 presence cannot establish that an announcement is true. Authenticated semantic
@@ -88,6 +91,64 @@ price provenance and release-correlated traces are still missing. Consequently
 the rubric never sets `full_gate_passed=true`, including for an 80% structural
 score or caller-supplied zero safety values. Missing safety is never inferred
 from a completed model response.
+
+## Native controller and memory primitives
+
+`delivery_native.NativeRuntime` implements native pinned-selector snapshots,
+regular candidate reconciliation, version-reference requests, explicit Hosted
+version-bound session activation and owned-session drain. Native identity must
+be active and the agent enabled. Each mutating SDK call checks the writer lease.
+The controller saves rollback intent **before** changing the selector, so failed
+consumer verification or an uncertain response does not discard the previous
+version. A failed reevaluation invalidates an earlier passing record.
+
+`NativeDelivery` keeps dev, test and labprod records in **one shared coordination
+journal**, not three independent locks. Test requires the identical digest's dev
+promotion receipt and a fresh upstream native-serving read-back; labprod requires
+the same from test. Repeated successful promotion is idempotent. Rollback retains
+separate previous/current dependency and state fingerprints, rejects drift and
+unrelated serving versions, and restores a retained previous promotion receipt
+when available. These checks coordinate participating writers; they are not a
+service-side compare-and-swap guarantee against portal or administrator changes.
+
+These are library primitives with mocked-service contract coverage, **not a
+wired live operator**. Integration must supply authenticated context inspection,
+grading, upstream observation, and an actual consumer request through the
+serving endpoint **without a version override**. Do not substitute an
+exact-version candidate request for that consumer check. A reviewed baseline
+must already exist and be explicitly pinned; bootstrap of a new agent is
+immediately serving and is not presented as isolated candidate creation.
+
+The harness disables all default filesystem, shell, web and subagent tools using
+the current SDK's `microsoft_copilot_toolset_preview` settings block. Only the two
+declared MCP integrations remain. A harness request uses an agent-specific
+endpoint and a fresh conversation. Its `agent_reference` field is only a
+capability probe: even an echoed matching reference cannot authorize promotion
+until independent native candidate-selection evidence is established. The
+controller records this as an explicit blocking condition.
+
+`delivery_memory.NativeMemory` implements create-if-absent policy read-back,
+fixed synthetic preference extraction, scoped recall/enumeration, confirmed scope
+deletion and non-mutating migration planning. Store TTL is 86,400 seconds;
+procedural and chat-summary extraction are disabled. Scope comes from an
+authenticated, allowlisted caller, never model/user text. Prompt tool binding
+uses `{{$userId}}`; its equivalence to the caller scope still needs live
+verification. Hosted uses direct APIs; no trusted Hosted caller forwarding or
+automatic runtime memory wiring is claimed.
+
+Extraction sends explicit `type: message`, preserves the raw service completion
+status/usage rather than the SDK's synthesized zero-usage fallback, and waits at
+most five minutes. The caller must durably journal the start and opaque SDK
+continuation before waiting. Keep that continuation in the private journal only.
+A timeout does **not** cancel the remote update: block subsequent writes until
+the pending operation is reconciled. Automatic resumption and cross-writer
+quiescence of runtime memory writes are not implemented.
+
+Nonempty memory migration is explicitly blocked: native `create_memory` exposes
+no original timestamp/expiry parameter, so replay could extend retention or
+resurrect expired state. An empty-scope plan is not a completed migration. Do not
+claim lossless memory migration/rollback, TTL-expiry observation, or harness
+memory support from these contract tests.
 
 ## Required native serving behavior: not substituted
 
@@ -102,10 +163,10 @@ does not prove non-serving creation on the actual serving agent.
 | Required proof | Prompt | Hosted | Copilot harness |
 |---|---|---|---|
 | Exact candidate while previous version serves | Version-reference request needs live verification | Version-bound session and activation need verification | No verified request-specific candidate override on agent endpoint |
-| Native exact-version cutover and rollback | Unfulfilled | Unfulfilled | Unfulfilled |
-| Before/during/after runtime identity | Unfulfilled | Unfulfilled | Unfulfilled |
-| Fresh session and old-session behavior | Unfulfilled | Activation/drain unfulfilled | Fresh conversation/endpoint integration unfulfilled |
-| Native scoped memory/migration/rollback | Unfulfilled | Unfulfilled | Unsupported; no substitute |
+| Native exact-version cutover and rollback | Controller contract-tested; not live | Controller contract-tested; not live | Controller refuses unverified candidate promotion |
+| Before/during/after runtime identity | SDK boundary checks; not live | SDK boundary checks; not live | SDK boundary checks; not live |
+| Fresh session and old-session behavior | Fresh conversation; not live | Version binding/activation/drain contract-tested | Fresh conversation/endpoint contract-tested; selection unverified |
+| Native scoped memory/migration/rollback | Native API primitives; migration blocked | Native API primitives; caller wiring/migration blocked | Unsupported; no substitute |
 
 Agent-specific endpoints and fresh conversations are preserved for the harness;
 no Hosted session API or `previous_response_id` fallback is used. The native
@@ -156,3 +217,5 @@ Never issue a blanket subscription or wildcard deletion.
 - [Search-index knowledge source](https://learn.microsoft.com/azure/search/agentic-knowledge-source-how-to-search-index)
 - [Official hosted protocol adapter](https://learn.microsoft.com/azure/foundry/agents/how-to/add-protocol-adapter)
 - [Current live controls and restoration](live-gates.md)
+- [Hosted session version binding](https://learn.microsoft.com/azure/foundry/agents/how-to/manage-hosted-sessions?pivots=python)
+- [Harness built-in capabilities and defaults](https://learn.microsoft.com/azure/foundry/agents/how-to/use-tools-skills-copilot-harness?pivots=sdk)

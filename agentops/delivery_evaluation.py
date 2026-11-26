@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from uuid import UUID
 
 from .contracts import fields, finite, fingerprint, parse_json, require
 from .delivery_contracts import FEATURE, TOOL_NAME
@@ -32,6 +33,8 @@ def grade(observation: dict, environment: str, page_ids: list[str], prices: dict
     response = observation["response"]
     require(response["status"] == "completed", "Runtime response incomplete")
     require(observation["route_before"] == observation["route_after"], "Runtime route changed")
+    require(all(item["type"] in ("mcp_call", "mcp_list_tools", "message", "reasoning")
+                for item in response["output"]), "Unexpected runtime capability executed")
     calls = [item for item in response["output"] if item["type"] == "mcp_call"]
     kb = [item for item in calls if item.get("server_label") == "knowledge-base"
           and item.get("name") == "knowledge_base_retrieve"]
@@ -45,8 +48,19 @@ def grade(observation: dict, environment: str, page_ids: list[str], prices: dict
         require(parse_json(item["arguments"]) == {"feature_id": FEATURE}, "Tool arguments differ")
     expected = {"feature_id": FEATURE, "environment": environment,
                 "backend": "deterministic-lab-fixture", **FIXTURES[environment]}
-    require(all(tool_payload(item["output"]) == expected for item in tools),
-            "Tool result has wrong environment, fixture version or status")
+    principals = []
+    for item in tools:
+        payload = tool_payload(item["output"])
+        fields(payload, set(expected), {"_auth"})
+        require({key: payload[key] for key in expected} == expected,
+                "Tool result has wrong environment, fixture version or status")
+        if "_auth" in payload:
+            auth = payload["_auth"]
+            fields(auth, {"principal_digest", "trace_id"})
+            require(re.fullmatch(r"[0-9a-f]{64}", auth["principal_digest"]) is not None,
+                    "Invalid authenticated principal digest")
+            require(str(UUID(auth["trace_id"])) == auth["trace_id"], "Invalid tool trace ID")
+            principals.append(auth)
     output = text_output(response).strip()
     if output.startswith("```json") and output.endswith("```"):
         output = output[7:-3].strip()
@@ -91,6 +105,8 @@ def grade(observation: dict, environment: str, page_ids: list[str], prices: dict
     blocking = ["Semantic announcement correctness and authenticated safety evidence are not implemented"]
     if not safety_passed:
         blocking.append("Missing or nonzero measured safety categories")
+    if len(principals) != len(tools):
+        blocking.append("Missing authenticated tool caller evidence")
     return {
         "rubric": "two-dependency-v1", "structural_score": quality, "checks": checks,
         "latency_seconds": elapsed, "cost_upper_bound_usd": cost, "usage": usage,
@@ -102,5 +118,6 @@ def grade(observation: dict, environment: str, page_ids: list[str], prices: dict
                            "output_digest": fingerprint(item["output"]),
                            "call_id": item["id"]} for item in calls],
         "fixture": expected, "requested_version": observation["requested_version"],
+        "authenticated_tool_calls": principals,
         "route_before": observation["route_before"], "route_after": observation["route_after"],
     }

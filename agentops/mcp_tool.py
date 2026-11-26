@@ -6,8 +6,9 @@ import argparse
 import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Callable
+from uuid import uuid4
 
-from .contracts import ENVIRONMENTS, LabError, canonical, fields, parse_json, require
+from .contracts import ENVIRONMENTS, LabError, canonical, fields, fingerprint, parse_json, require
 from .delivery_contracts import FEATURE, TOOL_NAME, TOOL_SCHEMA
 
 FIXTURES = {
@@ -17,7 +18,7 @@ FIXTURES = {
 }
 
 
-def dispatch(request: dict, environment: str) -> dict | None:
+def dispatch(request: dict, environment: str, caller: str | None = None) -> dict | None:
     fields(request, {"jsonrpc", "method"}, {"id", "params"})
     require(request["jsonrpc"] == "2.0", "Unsupported JSON-RPC")
     method = request["method"]
@@ -49,6 +50,9 @@ def dispatch(request: dict, environment: str) -> dict | None:
         require(params["arguments"]["feature_id"] == FEATURE, "Unknown feature")
         payload = {"feature_id": FEATURE, "environment": environment,
                    "backend": "deterministic-lab-fixture", **FIXTURES[environment]}
+        if caller is not None:
+            payload["_auth"] = {"principal_digest": fingerprint({"principal_id": caller}),
+                                "trace_id": str(uuid4())}
         result = {"structuredContent": payload,
                   "content": [{"type": "text", "text": canonical(payload).decode().strip()}],
                   "isError": False}
@@ -114,7 +118,8 @@ def handler(environment: str, verify: Callable[[str], str]):
                 self.send_error(400, "Invalid request body")
                 return
             try:
-                verify(self.headers.get("Authorization", ""))
+                caller = verify(self.headers.get("Authorization", ""))
+                require(isinstance(caller, str) and bool(caller), "Authenticated principal missing")
             except LabError:
                 self.send_response(401)
                 self.send_header("WWW-Authenticate", "Bearer")
@@ -125,7 +130,7 @@ def handler(environment: str, verify: Callable[[str], str]):
             try:
                 require(self.headers.get_content_type() == "application/json", "JSON required")
                 request = parse_json(body)
-                result = dispatch(request, environment)
+                result = dispatch(request, environment, caller)
                 status = 202 if result is None else 200
             except (LabError, ValueError, UnicodeError):
                 result = {"jsonrpc": "2.0", "id": request.get("id") if isinstance(request, dict) else None,

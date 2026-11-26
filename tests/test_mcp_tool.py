@@ -7,7 +7,7 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 from unittest.mock import Mock, patch
 
-from agentops.contracts import LabError, canonical
+from agentops.contracts import LabError, canonical, fingerprint
 from agentops.delivery_contracts import FEATURE, TOOL_NAME
 from agentops.mcp_tool import dispatch, entra_verifier, handler
 
@@ -65,6 +65,12 @@ class McpTransportTests(unittest.TestCase):
                     self.assertIs(payload["enabled"], enabled)
                     self.assertEqual(payload["environment"], environment)
                     self.assertEqual(payload["backend"], "deterministic-lab-fixture")
+                    self.assertEqual(payload["_auth"]["principal_digest"],
+                                     fingerprint({"principal_id": "synthetic-test-caller"}))
+                    self.assertNotIn("synthetic-test-caller", json.dumps(payload))
+                    with urlopen(request, timeout=5) as response:
+                        repeated = json.load(response)["result"]["structuredContent"]
+                    self.assertNotEqual(payload["_auth"]["trace_id"], repeated["_auth"]["trace_id"])
                 finally:
                     server.shutdown()
                     worker.join(timeout=5)
