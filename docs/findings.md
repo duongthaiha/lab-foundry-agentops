@@ -22,23 +22,23 @@ Do not treat this source map as a line-by-line review of an unread revision.
 | AO-06 | Synthetic Contoso contracts/cases for three tracks | Real agent implementations and measured baselines |
 | AO-07 | Deterministic bundle, change digests, integrity/path checks | Built hosted artifact, full real component provenance |
 | AO-08 | Separate strict synthetic environment bindings | Validated real Azure bindings |
-| AO-09 | Sorted process-shared lock keys and competing-writer tests | Shared distributed lease backend, live cancellation/reconciliation |
-| AO-10 | Contract/binding checks and retained dependencies | Supported data-plane reconciliation/read-back/readiness |
-| AO-11 | Non-serving candidate and readiness gates in local state | Real serving observation, identity/access, activation/final status |
+| AO-09 | Local competing-writer tests; Blob lease/CAS adapter and loss guards | Distributed contention, runtime-writer quiescence and live recovery |
+| AO-10 | Contract/binding checks, retained dependencies and normalized SDK read-back adapters | Azure data-plane reconciliation/read-back/readiness |
+| AO-11 | Native candidate isolation and concrete before/during serving consumers contract-tested | Live version, identity/access, activation/final-status proof; harness candidate selection unresolved |
 | AO-12 | Inclusive 80% quality boundary, exact-context finite gates, expiry, rejection | Enforce approved live limits with actual candidate measurements |
-| AO-13 | Same bytes across dev/test/labprod; explicit placeholder approvals with failed-evaluation rejection | Restore real approvals and prove caller-verified live serving transitions |
-| AO-14 | Retained composite references, independent local rollback | Real dependencies/caller behavior/session recovery |
+| AO-13 | Same-byte synthetic promotion; native shared-journal receipts and upstream checks | Full-quality grading, reviewed live authorization and Azure serving transitions |
+| AO-14 | Native retained context, durable recovery and override-free rollback consumer checks | Live dependencies/caller behavior/session recovery and state reconciliation |
 | AO-15 | Durable started/success/rejected/rollback attempt history | Remote immutable evidence, authenticated approvals and provenance |
-| AO-16 | Replayable local CLI/runbook | Live demo and another team member's replay |
+| AO-16 | Replayable simulator; delivery prepare/readiness/matrix and disabled native diagnostic CLI | Remaining live lifecycle commands, full demo and another team member's replay |
 | AO-17 | This explicit coverage and findings map | Verified source revision and recommendation-level live evidence |
 | AO-18 (P1) | No live drift implementation | Introduced drift, detected differences and reviewed repair |
 | AO-19 (P1) | Local context attribution only | OpenTelemetry/KQL and real caller/dependency correlation |
 | AO-20 (P1) | Local competing writers, rejection, interruption/replay | Complete isolated live A-O failure matrix |
 | AO-21 (P1) | Monitoring remains untested | Agreed responder/alert policy and controlled demonstration |
-| AO-22 | Hosted-shaped portable contract and digest constraint | Real hosted implementation/image/activation/session/trace proof |
+| AO-22 | Hosted Responses adapter, digest contract, CI image builds; native session/consumer tests | Pushed image provenance and live activation/session/trace proof |
 | AO-23 (optional) | Excluded | Separate approval for percentage canary |
-| AO-24 | Synthetic scope/allowlist/forget/expiry tests | Native extraction/consolidation/recall/ACL/retention on Prompt/Hosted |
-| AO-25 | Harness-shaped contract, no surrogate memory | Actual endpoint/conversation/final-status/version/migration tests |
+| AO-24 | Native scoped memory primitives, pending-operation recovery and SDK HTTP tests | Runtime caller mapping, live recall/ACL/retention; expiry-preserving migration blocked |
+| AO-25 | Harness built-ins disabled; fresh agent-endpoint consumer wire tests; no surrogate memory | Live endpoint/session behavior and verified isolated native candidate selection |
 | AO-26 | Explicit definition-vs-instance reuse analysis | Current runtime/scope/identity/maturity research |
 | AO-27 | Three knowledge topology alternatives and conditional decision | Validated support/ACL/costs, named owner, final architecture |
 | AO-28 | Component contracts, external bindings, retention checks | Separate live component delivery/permissions and compatibility tests |
@@ -53,14 +53,14 @@ Do not treat this source map as a line-by-line review of an unread revision.
 | S1 Source of truth/composite release | Caveat; locally exercised | Canonical bytes and digests are not signed provenance or frozen live content/state |
 | S2 Two-phase/read-back | Untested live | Local contract checks cannot establish infrastructure/data readiness |
 | S3 Prompt CI/CD | Untested live | Local transitions only; no ordinary Prompt agent deployed |
-| S4 Hosted/azd | Prerequisites observed; runtime untested | Setup/auth/preflight passed; synthetic image digest is not a built artifact |
-| S5 Serving/rollback/canary | Caveat; locally exercised | Local atomic SQL update is not evidence of Foundry pin atomicity or data rollback |
-| S6 Pipeline/coordination | Caveat; controller CI exercised | OS locks and SQL transactions are not distributed leases; remote CI has no Azure delivery credentials |
+| S4 Hosted/azd | Packaged and contract-tested; runtime untested | Hosted Responses adapter and CI container builds do not prove deployed image identity, activation or caller authorization |
+| S5 Serving/rollback/canary | Native SDK contract-tested; untested live | Concrete consumers omit version/session overrides before/during/after cutover and rollback; control-plane identity is not tool-caller identity; no service-side CAS or state-rollback proof |
+| S6 Pipeline/coordination | Caveat; controller CI exercised | Blob lease/CAS adapter is not live distributed-contention evidence; uncoordinated runtime/portal writers remain outside the lease |
 | S7 Environment strategy | Caveat; locally exercised | Synthetic scope rejection is not Azure account/network isolation evidence |
 | S8 Evaluation | Caveat; locally exercised | Exact context and thresholds tested with fabricated metrics, not LLM quality |
 | S9 Tools/toolboxes | Untested live | Shared mutable defaults, call identities, schemas/traces/approval behavior need actual observations |
 | S10 Knowledge/Foundry IQ | Untested live | Reuse/ACL/ingestion ordering/content rollback claims remain conditional |
-| S11 Memory | Caveat; synthetic recovery only | No native Memory tests; harness unsupported with no substitute; unjournaled writes block lossless-migration claims |
+| S11 Memory | Native API contracts tested; untested live | Scoped extraction/deletion/reconciliation HTTP tests do not establish runtime isolation or expiry; nonempty migration cannot preserve original TTL; harness unsupported with no substitute |
 | S12 Security/identity | Bootstrap verified; live gate deferred | Four scoped grants and secretless federation; reviewer removal is dry-run-only, real workflow disabled |
 | S13 Observability | Untested live | Attempt history is not runtime telemetry, monitoring or an alert demonstration |
 | S14 Preview/constraints | Documentation and management plane checked | Selected models/quota observed; runtime/API entitlement still untested |
@@ -79,6 +79,16 @@ passed all four combinations of Ubuntu/Windows and Python 3.11/3.13 in
 Each ran the 27 tests and synthetic CLI replay; Ubuntu/Python 3.13 also compiled
 all three Bicep templates. The separate push workflow also passed. These are
 remote controller/build checks, not live Azure integration tests.
+
+The subsequent native-consumer milestone is described in
+[delivery-demo.md](delivery-demo.md). The expanded local suite contains 82 tests,
+including the real Projects/OpenAI SDK HTTP serialization and bearer-auth flow
+against offline responses for all three tracks. Serving observations retain
+response/conversation/session IDs and selector fingerprints, not model output.
+The `verify-serving` command is wired but still fails closed before artifacts
+or Azure credentials when live preflight is not ready. It does not evaluate
+quality, prove a release match, grant authorization or move a serving selector.
+No live cells have been executed.
 
 Required next observations include actual runtime identities and denial paths,
 same-instance knowledge reuse, tool invocation traces/default changes, native
