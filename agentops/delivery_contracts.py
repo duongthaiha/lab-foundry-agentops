@@ -28,6 +28,20 @@ TOOL_SCHEMA = {
     "required": ["feature_id"],
     "additionalProperties": False,
 }
+# Strict structured output: prose-only format instructions let a live answer add an extra key.
+ANSWER_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "announcement": {"type": "string"},
+        "citations": {"type": "array", "items": {"type": "string"}},
+        "feature_id": {"type": "string"},
+        "enabled": {"type": "boolean"},
+        "environment": {"type": "string"},
+        "fixture_revision": {"type": "string"},
+    },
+    "required": ["announcement", "citations", "feature_id", "enabled", "environment", "fixture_revision"],
+    "additionalProperties": False,
+}
 
 
 def release(runtime: str, revision: str, source_hash: str, *, image: str | None = None,
@@ -43,11 +57,13 @@ def release(runtime: str, revision: str, source_hash: str, *, image: str | None 
             "and get_lab_feature_status on the lab-tools server with "
             'feature_id="power-pages-agents". Do not infer environment status from the PDF. '
             "Distinguish Microsoft announcements from fictional lab configuration. "
-            "Return JSON with announcement, citations (a list of exact page IDs returned by "
-            "the KB, in p0001 form), feature_id, enabled (boolean), environment, fixture_revision. "
+            "Return only one JSON object with exactly these keys and no others: announcement, "
+            "citations (a list of exact page IDs returned by the KB, in p0001 form), feature_id, "
+            "enabled (boolean), environment, fixture_revision. "
             "Cite only returned pages. If either dependency fails, say it is unavailable."
         ),
         "tool": {"name": TOOL_NAME, "input_schema": TOOL_SCHEMA, "backend": "deterministic-lab-fixture"},
+        "answer_schema_sha256": fingerprint(ANSWER_SCHEMA),
         "evaluation": {
             "version": "two-dependency-v1", "questions": [QUESTION],
             "quality_min": 0.8, "unsafe_max": 0,
@@ -66,7 +82,7 @@ def release(runtime: str, revision: str, source_hash: str, *, image: str | None 
 def validate(value: Any) -> None:
     fields(value, {
         "schema_version", "kind", "runtime", "agent", "source_revision", "model",
-        "source", "instructions", "tool", "evaluation", "memory", "negative_control",
+        "source", "instructions", "tool", "answer_schema_sha256", "evaluation", "memory", "negative_control",
     }, {"image"})
     require(value["schema_version"] == 1 and value["kind"] == "foundry-delivery",
             "Not a real-delivery release contract")
@@ -84,6 +100,9 @@ def validate(value: Any) -> None:
     require(value["tool"] == {
         "name": TOOL_NAME, "input_schema": TOOL_SCHEMA, "backend": "deterministic-lab-fixture",
     }, "Unexpected tool contract")
+    # The schema names an "environment" answer field, which portable releases forbid, so bind its hash.
+    require(value["answer_schema_sha256"] == fingerprint(ANSWER_SCHEMA),
+            "Answer schema drift; review a new grader contract")
     text(value["instructions"], "instructions")
     require(type(value["negative_control"]) is bool, "Invalid negative-control flag")
     expected_memory = "unsupported-no-substitute" if value["runtime"] == "harness" else "native-scoped-only"

@@ -67,7 +67,7 @@ Do not treat this source map as a line-by-line review of an unread revision.
 | S10 Knowledge/Foundry IQ | Untested live | Reuse/ACL/ingestion ordering/content rollback claims remain conditional |
 | S11 Memory | Native API contracts tested; untested live | Scoped extraction/deletion/reconciliation HTTP tests do not establish runtime isolation or expiry; nonempty migration cannot preserve original TTL; harness unsupported with no substitute |
 | S12 Security/identity | Bootstrap verified; live gate deferred | Existing platform stays disabled; bounded unattended dev-smoke exception is implemented. Lab resources use the MCAPS `SecurityControl=Ignore` exclusion with compensating controls ([below](#tenant-governance-finding-mcaps-storage-network-modify)) |
-| S13 Observability | Monitoring templated; live use in progress | `monitoring.bicep` adds Application Insights server-side agent tracing and resource diagnostic settings; attempt history alone is not runtime telemetry, and no alerting is demonstrated |
+| S13 Observability | Monitoring deployed in dev; traces verified | `monitoring.bicep` adds Application Insights server-side agent tracing and resource diagnostic settings; dev pilot traces show agent, tool and model spans with output. Attempt history alone is not runtime telemetry, and no alerting is demonstrated |
 | S14 Preview/constraints | Documentation and management plane checked | Selected models/quota observed; runtime/API entitlement still untested |
 
 ## Tenant governance finding: MCAPS storage network modify
@@ -161,6 +161,30 @@ record the reason either. Two changes follow:
   (`infra/monitoring.bicep`; see
   [debugging](dev-smoke.md#debugging-with-application-insights-and-logs)) so
   the operator can inspect the agent's actual output in a protected store.
+
+Root cause, by elimination (moderate confidence):
+
+- The operator cannot read the original answer. The stored response and its
+  conversation return 404 to the operator, both through the agent-scoped and the
+  plain project client, because they are scoped to the identity that created
+  them (the CI application). Debugging a CI run must therefore use the private
+  journal and Application Insights, not response IDs.
+- Three operator replays of the same release agent all passed grading, and
+  replaying the judge on those answers also passed. Every other `fields()` check
+  on the smoke path validates a deterministic MCP fixture, binding or a
+  strict-schema judge output. "Unexpected" rather than "Missing" means all six
+  keys were present plus at least one extra.
+- The answer format was enforced only by prose instructions, so the model
+  occasionally adding a key is the remaining explanation.
+
+Fix: the ordinary Prompt definition now sends a strict `json_schema` text format
+(`lab_answer_v1`, `additionalProperties: false`, all six keys required), and the
+instructions say "exactly these keys and no others". The release binds the
+schema by `answer_schema_sha256` (the schema names an `environment` field, which
+portable releases forbid), so the release digest and agent name change with it.
+The grader still rejects extra keys. Hosted and harness runtimes keep the
+prose-only format: the harness's `text.format` support is unverified and the
+hosted image would need a rebuild, so both keep this residual risk.
 
 ## Local evidence and limits
 

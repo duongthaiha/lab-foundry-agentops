@@ -288,6 +288,10 @@ one without weakening a check:
   `{"structuredResponse": ...}`. Any mismatch between the two is rejected.
 - `gpt-5-mini` used roughly 900-1,150 reasoning tokens per smoke turn, so all
   model calls allow 4,096 output tokens. The $0.05 case check is unchanged.
+- Prose-only output instructions let one CI answer add an extra JSON key, which
+  the strict grader rejected. The ordinary Prompt agent now sends a strict
+  `json_schema` text format; the grader is unchanged
+  ([finding](findings.md#first-journaled-dev-smoke-attempt)).
 
 ## Debugging with Application Insights and logs
 
@@ -317,6 +321,22 @@ Agent monitoring or Tracing view, or query `dependencies`/`traces` for
 `gen_ai.*` attributes, filtered by the agent name recorded in the journal.
 Traces can contain prompts and model output. They are synthetic in this lab, but
 the workspace is a protected store: never copy trace content into public logs.
+
+In the dev pilot (2026-11-26), each Prompt agent turn produced four
+`AppDependencies` rows with app role `responsesapi` and one shared operation ID:
+`invoke_agent <agent>:<version>`, `execute_tool` for the KB and for the lab tool,
+and `chat gpt-5-mini-2025-08-07`. The rows carry `gen_ai.agent.name`,
+`gen_ai.response.id`, token usage, tool arguments and results, and
+`gen_ai.output.messages`. This is how to read a CI run's answer: responses and
+conversations are scoped to the identity that created them, so the operator gets
+404 for a response ID created by the CI application. Start with the agent name:
+
+```kusto
+AppDependencies
+| where Properties["gen_ai.agent.name"] == "<agent from journal>"
+| project TimeGenerated, Name, Success, DurationMs, OperationId,
+          output = Properties["gen_ai.output.messages"]
+```
 
 The CI job's public log still shows only a terse status. For a rejected answer
 contract, the private journal attempt records `reason` and, when available,

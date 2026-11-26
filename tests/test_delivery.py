@@ -9,7 +9,7 @@ from azure.ai.projects.models import PromptAgentDefinition
 from agentops.contracts import LabError, canonical, fingerprint, parse_json
 from agentops.delivery import connections, controls, definition, main, matrix, require_live_gate, validate_target, verify_source_revision
 from agentops.delivery_azure import project_shape
-from agentops.delivery_contracts import FEATURE, TOOL_NAME, load, release, save
+from agentops.delivery_contracts import ANSWER_SCHEMA, FEATURE, TOOL_NAME, load, release, save, validate
 from agentops.delivery_evaluation import grade, judged_text, tool_payload
 from agentops.delivery_knowledge import content_readback, desired_knowledge
 from agentops.mcp_tool import FIXTURES
@@ -78,9 +78,27 @@ class DeliveryTests(unittest.TestCase):
                     self.assertEqual(built["container_configuration"]["image"], image)
                 else:
                     self.assertEqual(built["tools"], tools)
+                    self.assertEqual(PromptAgentDefinition(built).as_dict()["text"], {"format": {
+                        "type": "json_schema", "name": "lab_answer_v1", "strict": True,
+                        "schema": ANSWER_SCHEMA}})
+                if runtime != "prompt":
+                    self.assertNotIn("text", built)
                 path.write_bytes(path.read_bytes() + b" ")
                 with self.assertRaisesRegex(LabError, "changed release"):
                     load(path, digest)
+
+    def test_answer_schema_is_release_bound_and_still_graded_strictly(self):
+        negative = definition(release("prompt", "a" * 40, "b" * 64, negative=True), [], {})
+        self.assertNotIn("text", negative)
+        loose = release("prompt", "a" * 40, "b" * 64)
+        loose["answer_schema_sha256"] = fingerprint({**ANSWER_SCHEMA, "additionalProperties": True})
+        with self.assertRaisesRegex(LabError, "Answer schema drift"):
+            validate(loose)
+        value = observation()
+        message = value["response"]["output"][-1]["content"][0]
+        message["text"] = canonical({**parse_json(message["text"]), "notes": "extra"}).decode()
+        with self.assertRaisesRegex(LabError, "Unexpected fields"):
+            grade(value, "dev", ["p0004"], PRICES, 1, SAFETY)
 
     def test_unpinned_image_is_not_an_artifact(self):
         with self.assertRaisesRegex(LabError, "pinned ACR"):
