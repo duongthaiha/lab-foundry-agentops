@@ -8,7 +8,8 @@ fingerprint, implemented adapters and remaining native-serving/safety gates.
 The [bounded dev smoke](dev-smoke.md) adds a main-only unattended workflow,
 read-only foundation preflight, actual prompt-deployment adapter, dual MCP
 evidence checks and a response-bound model judge. Its offline tests are not live
-evidence; no resources or additional permissions were created to execute it.
+evidence. The bounded dev foundation has since been provisioned for the pilot
+(see [dev-smoke.md](dev-smoke.md)); no CI smoke result is claimed here.
 The received
 backlog identifies the source as `docs\ai-ml\guide\foundry-agentops.md` with article
 metadata date 2026-08-19; its exact Git revision has not been supplied/verified.
@@ -65,9 +66,53 @@ Do not treat this source map as a line-by-line review of an unread revision.
 | S9 Tools/toolboxes | Native lifecycle contract-tested; untested live | Version-pinned receipts and read-only default-resolution tests do not prove actual calls, schemas, authorization or shared-consumer effects |
 | S10 Knowledge/Foundry IQ | Untested live | Reuse/ACL/ingestion ordering/content rollback claims remain conditional |
 | S11 Memory | Native API contracts tested; untested live | Scoped extraction/deletion/reconciliation HTTP tests do not establish runtime isolation or expiry; nonempty migration cannot preserve original TTL; harness unsupported with no substitute |
-| S12 Security/identity | Bootstrap verified; live gate deferred | Existing platform stays disabled; bounded unattended dev-smoke exception is implemented but not enabled or credentialed |
+| S12 Security/identity | Bootstrap verified; live gate deferred | Existing platform stays disabled; bounded unattended dev-smoke exception is implemented. Lab resources use the MCAPS `SecurityControl=Ignore` exclusion with compensating controls ([below](#tenant-governance-finding-mcaps-storage-network-modify)) |
 | S13 Observability | Untested live | Attempt history is not runtime telemetry, monitoring or an alert demonstration |
 | S14 Preview/constraints | Documentation and management plane checked | Selected models/quota observed; runtime/API entitlement still untested |
+
+## Tenant governance finding: MCAPS storage network modify
+
+Observed live in the dev pilot on 2026-11-26. This is tenant-specific, not a
+Foundry behaviour.
+
+- **Finding.** The management-group initiative `MCAPSGovDeployPolicies` (v1.0.0)
+  includes `StorageAccount_PublicNetwork_Modify`, "SFI-NS2.2.1 Secure PaaS
+  Resources - Storage accounts (excluding NSP configured resources)", with
+  enforcement Default. Its modify effect ran at 18:30:48-18:31:24Z and changed
+  the dev storage account from the template's `publicNetworkAccess=Enabled` to
+  `Disabled`. GitHub-hosted runners therefore could not reach the S6 Blob
+  lease/CAS journal.
+- **Lab resolution.** The policy skips resources whose own tag or resource-group
+  tag is `SecurityControl=Ignore` (definition defaults; the assignment passes no
+  overrides). At the subscription owner's direction, every taggable lab resource
+  carries that tag in `infra/environment.bicep` and `infra/registry.bicep`. No
+  policy exemption or assignment change is made.
+- **Wider effect.** In the same initiative the tag also skips:
+  - the storage local-auth (SFI-ID4.2.1) and anonymous-access (AzTB 2) modifies;
+  - the Cognitive Services local-auth modify (AzTB 17);
+  - the AI Foundry hub public-network modify (hubs only; the lab has none);
+  - the deploy-if-not-exists diagnostic settings for Cognitive Services accounts
+    and Foundry projects;
+  - policies for resource types the lab does not use.
+
+  Defender-plan policies do not honour the tag, and the separate audit/deny
+  initiatives are unaffected.
+- **Compensating controls, kept in code.** Entra RBAC-only data access, with no
+  keys, SAS or anonymous access. Storage `allowSharedKeyAccess=false`,
+  `allowBlobPublicAccess=false`, private containers, OAuth default, HTTPS with
+  TLS 1.2. `disableLocalAuth` on the Foundry account, Search and Application
+  Insights, and the ACR admin user disabled.
+- **Residual gap.** Endpoints stay internet-reachable, protected only by Entra
+  authentication. Newly tagged environments do not get the MCAPS policy
+  diagnostic settings.
+- **Production guidance.** Do not rely on the exclusion tag. Keep storage private
+  and run delivery from private networking: self-hosted runners in a VNet with
+  private endpoints, or managed-network runners.
+- **Rejected alternatives.**
+  - NSP inbound rules for GitHub-hosted IP ranges, which are effectively public.
+  - A self-hosted runner for this public repository, which risks running
+    untrusted code.
+  - A policy exemption, which is outside the lab's authority.
 
 ## Local evidence and limits
 

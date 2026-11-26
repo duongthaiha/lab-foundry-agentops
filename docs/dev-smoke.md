@@ -39,7 +39,7 @@ application's broader four-group authority for this job.
 | AI Search | One Basic unit, one replica and partition; one hash-named PDF index, source and model-free extractive IQ KB |
 | MCP service | One Container Apps Consumption environment/app, 0.25 vCPU / 0.5 GiB, min 0 / max 1 replica; pinned reviewed image |
 | Registry | One dev Basic ACR, admin credentials disabled; managed-identity image pull |
-| Storage | One dev Standard_LRS account, no shared keys or public blobs; private `release-locks` container |
+| Storage | One dev Standard_LRS account, no shared keys or public blobs; private `release-locks` container; public network endpoint with Entra RBAC-only data access, tagged `SecurityControl=Ignore` ([MCAPS note](#tenant-governance-mcaps-storage-network-policy)) |
 | Logs | One dev workspace, 30-day retention, proposed 0.1 GB/day ingestion cap; no publisher text/tokens |
 
 Names must still be checked for availability before creation. Do not silently
@@ -72,6 +72,43 @@ Search preview entitlement must succeed through supported project setup.
 The MCP application must issue Entra v2 tokens, validate the exact tenant and
 `api://` audience, and allow **only the project managed-identity object ID**.
 The runtime's returned caller digest must match that ARM-observed identity.
+
+### Tenant governance: MCAPS storage network policy
+
+In this tenant the management-group initiative `MCAPSGovDeployPolicies` applies
+`StorageAccount_PublicNetwork_Modify` ("SFI-NS2.2.1 Secure PaaS Resources -
+Storage accounts (excluding NSP configured resources)"). On 2026-11-26 it changed
+the dev storage account from the requested `publicNetworkAccess=Enabled` to
+`Disabled` at creation, so the GitHub-hosted runner (and the operator) could not
+reach the Blob lease/CAS journal. The policy, and most of its sibling modify and
+diagnostics policies, skip a resource when the resource or its resource group has
+the tag `SecurityControl=Ignore`. With the subscription owner's direction, the lab
+uses that built-in exclusion. It does not create policy exemptions or change
+assignments.
+
+- `infra/environment.bicep` and `infra/registry.bicep` put `SecurityControl: Ignore`
+  on every taggable resource. Budgets and blob services/containers are not taggable.
+- For the already-provisioned pilot, first merge the tag onto each inventoried
+  resource and the dev resource group, preserving existing tags. Only then set
+  the storage account's public network access to Enabled. Wait a few minutes and
+  read it back. Public access must still be Enabled, shared-key access false,
+  anonymous blob access false and TLS 1.2, and an Entra-authenticated data-plane
+  read must succeed from outside a private network.
+- The tag also skips the storage local-auth and anonymous-access modifies, the
+  Cognitive Services local-auth modify and the policy-deployed diagnostic
+  settings for Foundry accounts/projects. The compensating controls are therefore
+  declared in code and must not be removed. Those controls are: Entra-only data
+  access, `allowSharedKeyAccess=false`, `allowBlobPublicAccess=false`, private
+  containers, HTTPS with TLS 1.2, `disableLocalAuth` on Foundry/Search/App Insights,
+  and the ACR admin user disabled. Never add account keys, SAS or anonymous access.
+  Newly tagged environments do not get the MCAPS diagnostic settings. The dev
+  account's existing policy-created setting remains.
+- This exclusion is a lab trade-off, not production guidance. Production
+  delivery should keep storage private and run from private networking, such as
+  self-hosted runners in a VNet with private endpoints or managed-network runners.
+  This lab rejected three alternatives. An NSP rule for GitHub-hosted runner IP
+  ranges is effectively public. A self-hosted runner for a public repository is
+  an untrusted-code risk. Policy exemptions are outside the lab's authority.
 
 ## Cost proposal, not spending authorization
 
@@ -265,6 +302,9 @@ Delete only these owned resources in dependency order; retain private evidence
 as agreed. Reconcile partially created names recorded in `planned_resources`.
 Do not delete the whole resource group, shared journal or unrelated budget by
 wildcard, and do not touch the previous platform federation or other environments.
+After the owned resources are gone, remove the `SecurityControl` tag from the dev
+resource group so that later resources there are not silently exempt. Record the
+tags before and after the removal.
 The workflow deliberately has no delete-all/reset or grant-repair operation.
 
 To reinstate the deferred reviewer, first stop/cancel as above. Restore the named

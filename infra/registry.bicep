@@ -6,7 +6,8 @@ param registryName string = 'cragentops${uniqueString(resourceGroup().id)}'
 resource registry 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
   name: registryName
   location: location
-  tags: { workload: 'agentops-lab', environment: 'shared' }
+  // MCAPS exclusion tag; see environment.bicep. Admin user stays disabled (Entra/AcrPull only).
+  tags: { workload: 'agentops-lab', environment: 'shared', SecurityControl: 'Ignore' }
   sku: { name: 'Basic' }
   properties: {
     adminUserEnabled: false
