@@ -58,7 +58,7 @@ def release(runtime: str, revision: str, source_hash: str, *, image: str | None 
             "For EVERY question call knowledge_base_retrieve on the knowledge-base server "
             "and get_lab_feature_status on the lab-tools server with "
             'feature_id="power-pages-agents". Do not infer environment status from the PDF. '
-            "Distinguish Microsoft announcements from fictional lab configuration. "
+            "Keep Microsoft announcements distinct from fictional lab configuration. "
             "Return only one JSON object with exactly these keys and no others: announcement, "
             "citations (a list of exact page IDs returned by the KB, in p0001 form), feature_id, "
             "enabled (boolean), environment, fixture_revision. "
