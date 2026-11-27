@@ -46,6 +46,16 @@ class NativeRuntime:
         self.agents = foundry.client.agents
         self.check_write = check_write
 
+    def wait_active(self, name: str, version: dict) -> dict:
+        deadline = time.monotonic() + 60
+        while version["status"] != "active":
+            require(version["status"] in ("creating", "updating") and time.monotonic() < deadline,
+                    "Version activation failed or timed out; reconcile before retrying")
+            self.check_write()
+            time.sleep(1)
+            version = self.foundry.get_version(name, version["version"])
+        return version
+
     def snapshot(self, name: str) -> dict:
         details = self.foundry.get_agent(name)
         require(details is not None, "A reviewed serving baseline must be provisioned first")
@@ -73,6 +83,7 @@ class NativeRuntime:
                 name, body={"definition": definition, "metadata": metadata, "draft": False},
                 headers={"Foundry-Features": "MicrosoftCopilot=V1Preview"},
             ).as_dict()
+        candidate = self.wait_active(name, candidate)
         require(self.snapshot(name) == previous, "Creating the candidate changed native serving")
         require(candidate.get("draft", False) is False and candidate["status"] == "active",
                 "Candidate is not an active regular version; reconcile before evaluation")
@@ -103,6 +114,8 @@ class NativeRuntime:
         before = self.snapshot(name)
         require(before == expected_serving, "Serving drift before exact-version invocation")
         kwargs = {"input": question, "max_output_tokens": MAX_OUTPUT_TOKENS, "metadata": {"release_digest": digest}}
+        if runtime == "prompt":
+            kwargs["max_tool_calls"] = 2
         session = None
         if runtime == "hosted":
             session = self.session(name, version, on_session)
@@ -150,6 +163,8 @@ class NativeRuntime:
         runtime = runtime_of(version["definition"])
         kwargs = {"input": question, "max_output_tokens": MAX_OUTPUT_TOKENS,
                   "metadata": {"operation_release_digest": operation_digest, "verification": "native-serving"}}
+        if runtime == "prompt":
+            kwargs["max_tool_calls"] = 2
         if runtime == "harness":
             kwargs["extra_headers"] = {"Foundry-Features": "MicrosoftCopilot=V1Preview"}
         with self.foundry.client.get_openai_client(agent_name=name, max_retries=0, timeout=60) as client:
@@ -184,6 +199,8 @@ class NativeRuntime:
                 "response_id": response["id"], "conversation_id": conversation.id,
                 "session_id": session_id if runtime == "hosted" else None,
                 "operation_release_digest": operation_digest, "latency_seconds": elapsed,
+                "usage": response.get("usage"),
+                "tool_call_count": sum(item.get("type") == "mcp_call" for item in response.get("output", [])),
                 "observed_at": utc_now(), "selection": "native-endpoint-without-override"}
 
     def cutover(self, name: str, version: str, previous: dict) -> dict:
@@ -403,6 +420,14 @@ class NativeDelivery:
         with self.journal.locked() as state:
             native = self._state(state)
             retained = native["retained"][name]
+            for version, definition in (
+                (retained["previous"]["version"], retained["previous_definition"]),
+                (retained["target_version"], retained["current_definition"]),
+            ):
+                actual = self.runtime.foundry.get_version(name, version)
+                require(actual["status"] == "active" and not actual.get("draft", False)
+                        and project_shape(actual["definition"], definition) == definition,
+                        "Retained native version changed; reconcile before rollback")
             require(self._context(retained["previous_definition"]) == retained["previous_context"]
                     and self._context(retained["current_definition"]) == retained["current_context"],
                     "Rollback needs content/state reconciliation; never restore stale state blindly")
@@ -410,7 +435,8 @@ class NativeDelivery:
             require(before["version"] in (retained["target_version"], retained["previous"]["version"])
                     and before["identity_digest"] == retained["previous"]["identity_digest"],
                     "Another native release or identity is serving; do not overwrite it")
-            attempt = {"action": "rollback", "status": "started", "before": before}
+            attempt = {"action": "rollback", "status": "started", "before": before,
+                       "release_digest": retained["release_digest"], "started_at": utc_now()}
             native["history"].append(attempt)
             self.journal.save(state)
             try:
@@ -426,7 +452,11 @@ class NativeDelivery:
                     native["serving"][name] = retained["previous_receipt"]
                 else:
                     native["serving"].pop(name, None)
-                attempt.update({"status": "rolled-back", "after": after, "consumer": observed})
+                attempt.update({"status": "rolled-back", "after": after, "consumer": observed,
+                                "restored_release_digest": (
+                                    retained["previous_receipt"]["release_digest"]
+                                    if retained["previous_receipt"] else None),
+                                "completed_at": utc_now()})
                 self.journal.save(state)
                 return attempt
             except Exception as exc:

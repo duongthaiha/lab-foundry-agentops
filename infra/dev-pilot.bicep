@@ -1,15 +1,19 @@
-// Manual dev-only foundation; no agent deployment, CI enablement or teardown.
+// Reviewed lab foundation; defaults preserve the restored dev resources.
 targetScope = 'resourceGroup'
+
+@allowed(['dev', 'test', 'labprod'])
+param environment string = 'dev'
 
 @allowed(['swedencentral'])
 param location string = 'swedencentral'
 
-var prefix = 'foudnry-agentops-lab-dev'
+var suffix = environment == 'labprod' ? 'prod' : environment
+var prefix = 'foudnry-agentops-lab-${suffix}'
 var tags = {
   workload: 'agentops-lab'
-  environment: 'dev'
+  environment: environment
   dataClassification: 'synthetic'
-  pilot: 'dev-smoke-v1'
+  pilot: environment == 'dev' ? 'dev-smoke-v1' : 'prompt-delivery-v1'
   SecurityControl: 'Ignore'
 }
 
@@ -36,8 +40,8 @@ resource project 'Microsoft.CognitiveServices/accounts/projects@2025-06-01' = {
   tags: tags
   identity: { type: 'SystemAssigned' }
   properties: {
-    displayName: 'AgentOps dev pilot'
-    description: 'Isolated synthetic AgentOps dev smoke; not a production application.'
+    displayName: 'AgentOps ${environment} pilot'
+    description: 'Isolated synthetic AgentOps ${environment} smoke; not a production application.'
   }
 }
 
@@ -71,7 +75,7 @@ resource search 'Microsoft.Search/searchServices@2025-05-01' = {
 
 // The MCAPS tag also skips local-auth policies; retain these controls explicitly.
 resource storage 'Microsoft.Storage/storageAccounts@2023-05-01' = {
-  name: 'stagentopslabdev'
+  name: 'stagentopslab${suffix}'
   location: location
   tags: tags
   kind: 'StorageV2'
@@ -98,7 +102,7 @@ resource locks 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-0
 }
 
 resource registry 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
-  name: 'cragentopslabdev'
+  name: 'cragentopslab${suffix}'
   location: location
   tags: tags
   sku: { name: 'Basic' }
@@ -159,6 +163,8 @@ output searchId string = search.id
 output storageId string = storage.id
 output locksId string = locks.id
 output registryServer string = registry.properties.loginServer
+output registryId string = registry.id
+output storageName string = storage.name
 output mcpIdentityId string = mcpIdentity.id
 output workspaceName string = logs.name
 output caeId string = cae.id

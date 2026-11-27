@@ -1,0 +1,40 @@
+name: Native retained-release rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Environment whose current release should be rolled back
+        type: choice
+        options: [dev, test, labprod]
+        required: true
+      artifact_run_id:
+        description: Promotion run containing the CURRENT release artifact (not the rollback target)
+        type: string
+        required: true
+      digest:
+        description: Exact CURRENT release SHA256; target comes only from the retained journal
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agentops-native-lifecycle
+  cancel-in-progress: false
+
+jobs:
+  rollback:
+    if: github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/deliver-environment.yml
+    permissions:
+      contents: read
+      actions: read
+      deployments: read
+      id-token: write
+    with:
+      environment: ${{ inputs.environment }}
+      action: rollback
+      digest: ${{ inputs.digest }}
+      artifact_run_id: ${{ inputs.artifact_run_id }}
