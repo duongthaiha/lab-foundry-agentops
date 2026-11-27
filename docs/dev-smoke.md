@@ -1,6 +1,12 @@
 # Dev-only unattended prompt deploy and graded smoke
 
-**Dev foundation provisioned; CI enablement pending.** This is a separate, reversible
+**Dev CI smoke passed on 2026-11-26; live infrastructure now needs recovery.**
+The later teardown was halted after the resource-deletion commands had finished.
+Admission remains closed and scheduled teardown is cancelled. Use the
+[manual experiment guide](manual-experiment.md) to reconstruct dev, run one
+case yourself and keep the experiment available.
+
+This is a separate, reversible
 exception to the reviewer restoration requirement for one bounded **dev prompt
 smoke**. It does not open the existing full-delivery or platform gates.
 After authorization on 2026-11-26 the operator provisioned only the dev inventory
@@ -46,9 +52,11 @@ application's broader four-group authority for this job.
 Names must still be checked for availability before creation. Do not silently
 suffix a private binding or switch subscription, region, model or SKU. The
 existing `infra/environment.bicep` is **not** this minimal inventory: it includes
-an embedding model and does not deploy the MCP Container App. The platform owner
-must prepare/review the exact scoped bootstrap plan; do not dispatch the broad
-platform template as an implicit substitute.
+an embedding model and does not deploy the MCP Container App. The manual guide
+uses `infra/dev-pilot.bicep` and `infra/dev-pilot-mcp.bicep`, preserved from the
+pilot bootstrap with the reviewed tags and model capacity. Review their what-if
+before reconstruction; do not dispatch the broad platform template as an
+implicit substitute.
 
 Create a **separate dev delivery app** with no password/certificate, issuer
 `https://token.actions.githubusercontent.com`, audience
@@ -345,6 +353,11 @@ contract, the private journal attempt records `reason` and, when available,
 the values.
 
 ## Stop, teardown, reset and restoring reviewers
+
+**A pause is not teardown.** For the manual experiment, leave resources and
+evidence intact; the one-time teardown automation was cancelled on 2026-11-27.
+The deletion-dependent procedures below require a separate explicit cleanup
+decision and are not part of finishing a manual session.
 
 To stop new requests, turn `LIVE_DEV_SMOKE_ENABLED=false` and disable
 `dev-smoke.yml`. Cancel active runs and verify terminal state before changing
