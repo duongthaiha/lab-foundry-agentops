@@ -1,15 +1,16 @@
 # Three-track delivery demo: implemented milestone and remaining gates
 
 **This is not a completed live demo.** The new operator prepares real portable
-intent and checks current controls. SDK adapters are implemented but not
+intent and checks current controls. Full multi-environment delivery is not
 Azure-validated. `probe` and `verify-serving` deliberately cannot execute, even if platform gates are
 later restored: runtime, identity, cost, safety and operation-specific approval
 preflight still require implementation and review. There is no new live workflow,
 credential grant, approval submission or automatic provisioning in that path.
 The separate [dev-only unattended smoke](dev-smoke.md) is now implemented,
-including an authenticated, response-bound model judge. It does not use or weaken
-these full-delivery gates, remains off pending scoped foundation authorization,
-and does not resolve the nine-cell native-promotion acceptance criteria.
+including an authenticated, response-bound model judge, and passed a live CI
+case on 2026-11-26. It does not use or weaken these full-delivery gates and does
+not resolve the nine-cell native-promotion acceptance criteria. Its foundation
+now needs recovery; see [manual operation without teardown](manual-experiment.md).
 
 `verify-serving` is now wired to the native consumer diagnostic, not to
 promotion or grading. Its CLI accepts `--bundle`, `--digest`, `--target`,

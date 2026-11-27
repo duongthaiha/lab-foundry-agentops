@@ -1,8 +1,11 @@
 # Foundry AgentOps lab
 
-**Current implementation: local release-control simulation plus an IQ/MCP
-delivery-adapter milestone. Not a deployed
-Foundry lab, and not evidence that Azure recommendations have been validated.**
+**Current implementation: local release-control simulation, IQ/MCP delivery
+adapters, and one verified dev-only ordinary-Prompt CI smoke.** Full
+multi-environment promotion and rollback have not been validated against Azure.
+The live pilot passed on 2026-11-26; its infrastructure was subsequently removed
+before a halt reached the teardown session. To reconstruct it, repeat the smoke
+manually and leave it available, follow [the manual experiment guide](docs/manual-experiment.md).
 
 The Python CLI builds immutable per-agent bundles and simulates dev -> test ->
 labprod promotion for ordinary Prompt, Hosted, and Microsoft Copilot harness
@@ -30,19 +33,21 @@ overwrite an existing demo. Use a new named output directory for another run.
 Every result is labelled `simulated`; the metrics are fixture values, not model
 measurements. Hosted image references are synthetic and have not been built.
 
-`--mode live` fails before creating state. New adapters are not live-validated;
-no serving endpoint exists. Start with the
+`--mode live` fails before creating state. The general multi-environment delivery
+path remains gated; the dev smoke is a separate, narrower path. Start with the
 [three-track operator walkthrough and remaining gates](docs/delivery-demo.md).
 `python -m agentops.delivery prepare`, `readiness`, and `matrix` are usable;
 `probe` is deliberately blocked pending complete preflight and authorization.
 Native serving, rollback and memory acceptance remain unfulfilled.
 The separate [dev-only unattended prompt smoke](docs/dev-smoke.md) now implements
 an expiring, main-only deploy/graded-smoke workflow without requiring a reviewer
-per run. It remains off pending explicit dev infrastructure/identity/cost setup;
+per run. It is currently disabled; another run requires restored dev
+infrastructure/identity and a fresh reviewed cost policy/binding;
 it never authorizes promotion or opens test/production.
 Reviewed platform code is on `main`; a nonbillable,
-secretless OIDC bootstrap and four empty lab groups exist. No live agents or
-billable infrastructure have been deployed.
+secretless OIDC bootstrap and four lab groups exist. The retained CI/MCP apps,
+resource-group tag and private evidence survive; the dev data plane needs
+reconstruction. No automatic teardown is scheduled for the manual experiment.
 
 **Temporary dry-run posture:** the user deferred GitHub environment reviewer
 requirements. The real platform workflow is disabled and
@@ -63,6 +68,7 @@ spending cutoff**. See the live-gates document for its observed deployment statu
 
 ## Read next
 
+- [Manual experiment: recovery, one run, Playground, and pause without teardown](docs/manual-experiment.md)
 - [Runbook and recovery](docs/runbook.md)
 - [Operating model and contracts](docs/operating-model.md)
 - [Capability and reuse boundaries](docs/capabilities-and-reuse.md)
