@@ -27,7 +27,7 @@ from .delivery_native import NativeDelivery, NativeRuntime
 
 WORKFLOWS = {"promote": "promote.yml", "rollback": "rollback.yml"}
 RESERVATION_USD = 0.50
-SETTLED = {"promoted", "rejected", "rolled-back", "failed-before-mutation"}
+SETTLED = {"promoted", "rejected", "rolled-back", "failed-before-mutation", "failed-before-cutover"}
 BASELINE = {
     "kind": "prompt", "model": "gpt-5-mini", "tools": [], "tool_choice": "none",
     "instructions": "No evaluated release has been promoted. Reply only: AgentOps lab is not ready.",
@@ -279,8 +279,9 @@ def execute(foundry, journal, policy: dict, config: dict, bundle: dict, digest: 
         attempts = ledger["attempts"]
         pending = [row for row in attempts.values() if row["status"] not in SETTLED]
         require(not pending or (action == "rollback" and all(
-            row["environment"] == environment and row["action"] == "promote" and row["release_digest"] == digest
-            for row in pending)), "An uncertain operation needs reconciliation or its exact rollback")
+            row["environment"] == environment and row["action"] in ("promote", "rollback")
+            and row["release_digest"] == digest for row in pending)),
+            "An uncertain operation needs reconciliation or its exact rollback")
         require(run_key not in attempts, "Attempt already exists; never replay uncertain usage")
         require(len(attempts) < policy["max_operations"], "Lifetime operation allowance exhausted")
         reserved = sum(row["reserved_usd"] for row in attempts.values()) + RESERVATION_USD
@@ -318,6 +319,9 @@ def execute(foundry, journal, policy: dict, config: dict, bundle: dict, digest: 
             definitions = ledger["definitions"].setdefault(environment, {})
             inspector = ContextInspector(foundry, binding, definitions)
             runtime = MeteredRuntime(foundry, view.check, charge)
+            attempt["safe_before"] = (
+                runtime.snapshot(bundle["agent"]) if foundry.get_agent(bundle["agent"]) is not None else None)
+            view.save(state)
             delivery = NativeDelivery(runtime, view, inspector, environment)
             if action == "promote":
                 native = state.get("native", {}).get(environment, {})
@@ -345,6 +349,9 @@ def execute(foundry, journal, policy: dict, config: dict, bundle: dict, digest: 
                 tools = connections(foundry, digest, knowledge)
                 desired = definition(bundle, tools, foundry.target)
                 bootstrap(foundry, bundle, policy, definitions, ledger.setdefault("agents", {}), view)
+                if attempt["safe_before"] is None:
+                    attempt["safe_before"] = runtime.snapshot(bundle["agent"])
+                    view.save(state)
                 definitions[fingerprint(desired)] = {
                     "definition": desired, "knowledge": knowledge, "bundle": bundle,
                 }
@@ -362,6 +369,9 @@ def execute(foundry, journal, policy: dict, config: dict, bundle: dict, digest: 
                 require(retained and retained["release_digest"] == digest,
                         "Rollback must name the exact current release, not a stale or arbitrary version")
                 require(retained["previous_receipt"] is not None, "No previously evaluated release to restore")
+                mutation_started = True
+                attempt.update({"mutation_started": True, "phase": "rollback"})
+                view.save(state)
                 result = delivery.rollback(bundle["agent"])
                 attempt.update({"status": "rolled-back", "before": result["before"], "after": result["after"],
                                 "restored_release_digest": result["restored_release_digest"]})
@@ -371,8 +381,43 @@ def execute(foundry, journal, policy: dict, config: dict, bundle: dict, digest: 
             view.save(state)
             return attempt
         except Exception as exc:
-            attempt.update({"status": "reconcile-required" if mutation_started else "failed-before-mutation",
-                            "error_type": type(exc).__name__, "completed_at": utc_now()})
+            status = "reconcile-required"
+            if not mutation_started:
+                status = "failed-before-mutation"
+            elif action == "promote":
+                try:
+                    view.check()
+                    native = state.get("native", {}).get(environment, {})
+                    retained = native.get("retained", {}).get(bundle["agent"])
+                    if not retained or retained.get("release_digest") != digest:
+                        expected = attempt.get("safe_before")
+                        current_exists = foundry.get_agent(bundle["agent"]) is not None
+                        owned = ledger.get("agents", {}).get(environment) == bundle["agent"]
+                        unchanged = (not current_exists and expected is None and not owned)
+                        if current_exists and expected is not None:
+                            unchanged = runtime.snapshot(bundle["agent"]) == expected
+                        elif current_exists and expected is None and owned:
+                            current = runtime.snapshot(bundle["agent"])
+                            baseline = foundry.get_version(bundle["agent"], current["version"])
+                            baseline_record = ledger.get("definitions", {}).get(environment, {}).get(
+                                fingerprint(BASELINE))
+                            unchanged = (
+                                baseline_record is not None
+                                and baseline_record.get("definition") == BASELINE
+                                and baseline_record.get("knowledge") is None
+                                and baseline["status"] == "active"
+                                and not baseline.get("draft", False)
+                                and baseline.get("metadata", {}).get("purpose") == "prompt-pipeline-baseline-v1"
+                                and project_shape(baseline["definition"], BASELINE) == BASELINE
+                            )
+                            if unchanged:
+                                attempt["safe_before"] = current
+                        if unchanged:
+                            status = "failed-before-cutover"
+                            attempt["verified_serving_unchanged"] = True
+                except Exception as verification_error:
+                    attempt["state_verification_error_type"] = type(verification_error).__name__
+            attempt.update({"status": status, "error_type": type(exc).__name__, "completed_at": utc_now()})
             if isinstance(exc, LabError):
                 attempt["reason"] = str(exc)[:300]
             view.save(state)
