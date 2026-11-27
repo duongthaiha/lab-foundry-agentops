@@ -15,6 +15,9 @@ on:
       artifact_run_id:
         required: true
         type: string
+    secrets:
+      DELIVERY_BINDING:
+        required: true
 
 permissions:
   contents: read

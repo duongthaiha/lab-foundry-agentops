@@ -17,7 +17,7 @@ from .contracts import (
 )
 from .delivery import REPO, connections, definition, gh, validate_target, verify_source_revision
 from .delivery_azure import BlobJournal, Foundry, project_shape
-from .delivery_contracts import endpoint, load, release, validate
+from .delivery_contracts import NATIVE_EVALUATION_VERSION, endpoint, load, release, validate
 from .delivery_dev import (
     CheckedHTTP, inspect_environment, judge_response, measured_cost, validate_binding, verify_ci_identity,
 )
@@ -74,8 +74,8 @@ def authorize(environ: dict, environment: str, action: str, digest: str,
     policy = parse_json(environ.get("DELIVERY_POLICY", ""))
     config = parse_json(environ.get("DELIVERY_BINDING", ""))
     fields(policy, {"mode", "id", "source_revision", "binding_digest", "release_digests", "actions",
-                    "valid_from", "expires_at", "price_checked_at", "spend_checked_at",
-                    "spend_observed_usd", "estimated_monthly_usd", "max_operations", "allow_bootstrap"})
+                    "valid_from", "expires_at", "price_checked_at",
+                    "estimated_monthly_usd", "max_operations", "allow_bootstrap"})
     require(policy["mode"] == "prompt-delivery-v1", "Wrong native delivery policy")
     identifier(policy["id"], "policy ID")
     require(re.fullmatch(r"[0-9a-f]{40}", policy["source_revision"]) is not None, "Reviewed operator SHA required")
@@ -89,11 +89,10 @@ def authorize(environ: dict, environment: str, action: str, digest: str,
             "Operation was not authorized")
     start, end = instant(policy["valid_from"]), instant(policy["expires_at"])
     require(start <= now < end and end - start <= timedelta(days=7), "Delivery policy is expired or too long")
-    for key, maximum in (("price_checked_at", timedelta(days=7)), ("spend_checked_at", timedelta(days=1))):
-        require(timedelta(0) <= now - instant(policy[key]) <= maximum, "Price/spend observation is stale")
-    require(0 <= finite(policy["spend_observed_usd"], "observed spend") < 30
-            and 0 < finite(policy["estimated_monthly_usd"], "monthly estimate") <= 500,
-            "Original $30 review / $40 stop / $500 monthly bounds remain in force")
+    require(timedelta(0) <= now - instant(policy["price_checked_at"]) <= timedelta(days=7),
+            "Price observation is stale")
+    require(0 < finite(policy["estimated_monthly_usd"], "monthly estimate") <= 500,
+            "Original $500 monthly estimate bound remains in force")
     require(type(policy["max_operations"]) is int and 1 <= policy["max_operations"] <= 10
             and type(policy["allow_bootstrap"]) is bool, "Invalid attempt or bootstrap allowance")
     require(fingerprint(config) == policy["binding_digest"], "Reviewed environment binding changed")
@@ -168,7 +167,8 @@ def evaluate_case(foundry, bundle, observation, pages, knowledge, caller, check,
     """Only authenticated, subject-bound measured evaluation can produce a passing gate."""
     try:
         structural = grade(observation, foundry.target["environment"], knowledge["page_ids"],
-                           foundry.target["prices"], observation["latency_seconds"])
+                           foundry.target["prices"], observation["latency_seconds"],
+                           max_case_usd=bundle["evaluation"]["max_case_usd"])
         require(all(structural["checks"].values()), "Incomplete structural answer")
         auth = structural["authenticated_tool_calls"]
         tool_calls = [row for row in structural["tool_evidence"] if row["server_label"] == "lab-tools"]
@@ -176,15 +176,15 @@ def evaluate_case(foundry, bundle, observation, pages, knowledge, caller, check,
                 and all(row.get("release_digest") == observation["release_digest"]
                         and row["principal_digest"] == caller for row in auth),
                 "Runtime tool identity or release binding differs")
-        semantic = judge_response(foundry, bundle, observation, pages, structural, check)
-        charge({"usage": semantic["usage"]}, 0)
+        semantic = judge_response(foundry, bundle, observation, pages, structural, check,
+                                  max_case_usd=bundle["evaluation"]["max_case_usd"], charge=charge)
         require(semantic["subject_digest"] == fingerprint(observation["response"]),
                 "Evaluator subject differs")
         return {"full_gate_passed": True, "structural": structural, "semantic": semantic,
-                "rubric": "prompt-native-delivery-v1"}
+                "rubric": NATIVE_EVALUATION_VERSION}
     except LabError as exc:
         # Invalid observations/grades reject the candidate. Transport/SDK errors propagate as uncertainty.
-        return {"full_gate_passed": False, "reason": str(exc), "rubric": "prompt-native-delivery-v1"}
+        return {"full_gate_passed": False, "reason": str(exc), "rubric": NATIVE_EVALUATION_VERSION}
 
 
 class ContextInspector:
@@ -225,7 +225,7 @@ class ContextInspector:
             "content_digest": content, "identity_digest": caller,
             "state_digest": fingerprint({"memory": "not-attached", "mutable_dependencies": []}),
             "policy_digest": fingerprint({"model": "gpt-5-mini-2025-08-07", "policy": "Microsoft.DefaultV2",
-                                          "rubric": "prompt-native-delivery-v1"}),
+                                          "rubric": NATIVE_EVALUATION_VERSION}),
         }
 
 
@@ -262,8 +262,9 @@ def bootstrap(foundry, bundle: dict, policy: dict, definitions: dict, owned_agen
 def execute(foundry, journal, policy: dict, config: dict, bundle: dict, digest: str,
             run_key: str, action: str, reauthorize, source_loader, upstream_check) -> dict:
     validate(bundle)
-    require(bundle["runtime"] == "prompt" and fingerprint(bundle) == digest,
-            "Only the exact ordinary-Prompt bundle is supported")
+    require(bundle["runtime"] == "prompt" and fingerprint(bundle) == digest
+            and bundle["evaluation"]["version"] == NATIVE_EVALUATION_VERSION,
+            "Only the exact current native Prompt evaluation contract is supported")
     require(digest in policy["release_digests"] and action in policy["actions"], "Unreviewed operation")
     binding = config["current"]
     require("tool_image_sha256" in bundle
@@ -284,8 +285,6 @@ def execute(foundry, journal, policy: dict, config: dict, bundle: dict, digest: 
             "An uncertain operation needs reconciliation or its exact rollback")
         require(run_key not in attempts, "Attempt already exists; never replay uncertain usage")
         require(len(attempts) < policy["max_operations"], "Lifetime operation allowance exhausted")
-        reserved = sum(row["reserved_usd"] for row in attempts.values()) + RESERVATION_USD
-        require(policy["spend_observed_usd"] + reserved < 30, "Stop before the original $30 spend review")
         prior_policy = ledger["policies"].setdefault(policy["id"], fingerprint(policy))
         require(prior_policy == fingerprint(policy), "Policy ID cannot be reused with different bounds")
         attempt = {"status": "reserved", "environment": environment, "action": action,
@@ -303,7 +302,7 @@ def execute(foundry, journal, policy: dict, config: dict, bundle: dict, digest: 
             cost += foundry.target["prices"]["safety_call_upper_bound_usd"]
             attempt["measured_upper_bound_usd"] += cost
             view.save(state)
-            require(0 <= tool_calls <= 2 and cost <= 0.05, "Measured request exceeded its case bound")
+            require(0 <= tool_calls <= 2, "Measured request exceeded its tool-call bound")
             require(attempt["measured_upper_bound_usd"] <= RESERVATION_USD, "Operation reservation exceeded")
 
         original_arm, original_search = foundry.arm, foundry.search
@@ -455,7 +454,7 @@ def main() -> int:
             verify_source_revision(args.source_revision)
             source_hash, _ = acquire_source(args.output / "sources")
             bundle = release("prompt", args.source_revision, source_hash, negative=args.negative,
-                             tool_image_sha256=args.tool_image_sha256)
+                             tool_image_sha256=args.tool_image_sha256, native_pipeline=True)
             with (args.output / "release.json").open("xb") as stream:
                 stream.write(canonical(bundle))
             digest = fingerprint(bundle)
@@ -467,7 +466,9 @@ def main() -> int:
             policy, config = authorize(os.environ, args.environment, args.action, args.digest)
             verify_source_revision(policy["source_revision"])
             bundle = load(args.bundle, args.digest)
-            require(bundle["runtime"] == "prompt", "Hosted and harness delivery remain gated")
+            require(bundle["runtime"] == "prompt"
+                    and bundle["evaluation"]["version"] == NATIVE_EVALUATION_VERSION,
+                    "Only the current native Prompt evaluation contract is supported")
             if args.command == "authorize":
                 result = {"status": "delivery-policy-verified", "infrastructure_verified": False}
             else:

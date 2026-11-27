@@ -28,6 +28,8 @@ jobs:
   rollback:
     if: github.ref == 'refs/heads/main'
     uses: ./.github/workflows/deliver-environment.yml
+    secrets:
+      DELIVERY_BINDING: ${{ secrets.DELIVERY_BINDING }}
     permissions:
       contents: read
       actions: read
