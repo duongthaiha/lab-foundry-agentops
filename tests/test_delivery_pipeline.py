@@ -41,13 +41,14 @@ def policy(config, bundles):
         "source_revision": "a" * 40, "binding_digest": fingerprint(config),
         "release_digests": [fingerprint(bundle) for bundle in bundles], "actions": ["promote", "rollback"],
         "valid_from": "2026-11-27T00:00:00Z", "expires_at": "2026-11-28T00:00:00Z",
-        "price_checked_at": "2026-11-27T00:00:00Z", "spend_checked_at": "2026-11-27T00:00:00Z",
-        "spend_observed_usd": 2, "estimated_monthly_usd": 260, "max_operations": 10, "allow_bootstrap": True,
+        "price_checked_at": "2026-11-27T00:00:00Z",
+        "estimated_monthly_usd": 260, "max_operations": 10, "allow_bootstrap": True,
     }
 
 
 def bundle(revision="a", negative=False):
-    return release("prompt", revision * 40, "b" * 64, negative=negative, tool_image_sha256="d" * 64)
+    return release("prompt", revision * 40, "b" * 64, negative=negative, tool_image_sha256="d" * 64,
+                   native_pipeline=True)
 
 
 class ServiceFixture(NativeFixture):
@@ -84,6 +85,7 @@ class ServiceFixture(NativeFixture):
             self.arm, method, path, body, **kw)
         self.foundry.search.request.side_effect = self.search_request
         self.judge_quality = 100
+        self.input_tokens = 100
 
     def create(self, name, body, **kwargs):
         self.exists = True
@@ -115,13 +117,13 @@ class ServiceFixture(NativeFixture):
         if kwargs.get("model"):
             verdict = {"quality": self.judge_quality, "Hate": 0, "SelfHarm": 0, "Sexual": 0, "Violence": 0}
             value = {"id": "synthetic-judge", "model": "gpt-5-mini", "status": "completed",
-                     "usage": {"input_tokens": 100, "output_tokens": 20},
+                     "usage": {"input_tokens": self.input_tokens, "output_tokens": 20},
                      "output": [{"type": "message", "content": [
                          {"type": "output_text", "text": canonical(verdict).decode()}]}]}
         else:
             value = super().respond(**kwargs).model_dump()
             version = self.versions[value["agent_reference"]["version"]]
-            value["usage"] = {"input_tokens": 100, "output_tokens": 20}
+            value["usage"] = {"input_tokens": self.input_tokens, "output_tokens": 20}
             if version["definition"].get("tool_choice") == "none":
                 value["output"] = [{"type": "message", "content": [
                     {"type": "output_text", "text": "Not ready."}]}]
@@ -172,8 +174,51 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(self.worlds["labprod"].serving, "2")
         self.assertEqual(self.journal.state["dev_smoke"], {"preserved-history": {"used": 5}})
         self.assertEqual(len(self.journal.state["delivery_pipeline"]["attempts"]), 8)
+        attempts = self.journal.state["delivery_pipeline"]["attempts"].values()
+        self.assertEqual(sum(row["reserved_usd"] for row in attempts), 4.0)
+        self.assertTrue(all(0 < row["measured_upper_bound_usd"] <= row["reserved_usd"] for row in attempts))
         self.assertNotIn("before", public_receipt(restored))
         self.assertNotIn("definitions", public_receipt(restored))
+
+    def test_native_requests_above_old_case_cap_are_measured_not_rejected(self):
+        self.worlds["dev"].input_tokens = 220_000
+        result = self.run_stage("dev", self.bundles[0])
+        self.assertEqual(result["status"], "promoted")
+        self.assertTrue(result["full_gate_passed"])
+        candidate = self.journal.state["native"]["dev"]["candidates"][fingerprint(self.bundles[0])]
+        grade = candidate["grades"][0]
+        self.assertGreater(grade["structural"]["cost_upper_bound_usd"], 0.05)
+        self.assertGreater(grade["semantic"]["combined_cost_upper_bound_usd"], 0.05)
+        self.assertGreater(result["measured_upper_bound_usd"], grade["semantic"]["combined_cost_upper_bound_usd"])
+        self.assertLessEqual(result["measured_upper_bound_usd"], result["reserved_usd"])
+
+    def test_operation_reservation_remains_without_case_cap(self):
+        self.worlds["dev"].input_tokens = 2_000_000
+        with self.assertRaisesRegex(LabError, "Operation reservation exceeded"):
+            self.run_stage("dev", self.bundles[0])
+        attempt = next(iter(self.journal.state["delivery_pipeline"]["attempts"].values()))
+        self.assertFalse(attempt["full_gate_passed"])
+        self.assertGreater(attempt["measured_upper_bound_usd"], attempt["reserved_usd"])
+        self.assertEqual(self.worlds["dev"].serving, "1")
+
+    def test_rejected_expensive_judge_usage_is_still_accounted(self):
+        world = self.worlds["dev"]
+        world.input_tokens = 220_000
+        world.judge_quality = 79
+        result = self.run_stage("dev", self.bundles[0])
+        self.assertEqual(result["status"], "rejected")
+        self.assertFalse(result["full_gate_passed"])
+        self.assertEqual(world.serving, "1")
+        minimum_input_cost = (world.client.responses.create.call_count * world.input_tokens
+                              * world.foundry.target["prices"]["input_per_million"] / 1_000_000)
+        self.assertGreaterEqual(result["measured_upper_bound_usd"], minimum_input_cost)
+
+    def test_legacy_cap_profile_is_not_silently_reinterpreted(self):
+        legacy = release("prompt", "a" * 40, "b" * 64, tool_image_sha256="d" * 64)
+        with self.assertRaisesRegex(LabError, "current native Prompt evaluation contract"):
+            self.run_stage("dev", legacy)
+        self.worlds["dev"].agents.create_version.assert_not_called()
+        self.assertNotIn("delivery_pipeline", self.journal.state)
 
     def test_stage_retry_reuses_serving_receipt_without_creating_a_new_version(self):
         self.run_stage("dev", self.bundles[0])
@@ -266,6 +311,8 @@ class PipelineTests(unittest.TestCase):
         result = self.run_stage("dev", self.bundles[0])
         self.assertEqual(result["status"], "promoted")
         self.assertEqual(len(self.journal.state["delivery_pipeline"]["attempts"]), 2)
+        self.assertEqual(sum(row["reserved_usd"] for row in
+                             self.journal.state["delivery_pipeline"]["attempts"].values()), 1.0)
 
     def test_verified_pre_cutover_failure_does_not_deadlock_pipeline(self):
         with patch("agentops.delivery_pipeline.materialize", side_effect=LabError("partial materialization")):
@@ -347,6 +394,15 @@ class AuthorizationTests(unittest.TestCase):
             with self.assertRaisesRegex(LabError, "no recorded human approval"):
                 authorize(env, "labprod", action, digest, read, NOW)
 
+    def test_obsolete_spend_and_waiver_metadata_are_rejected_before_external_access(self):
+        env, bounds, _, _, digest = self.auth()
+        for change in ({"spend_checked_at": None}, {"spend_observed_usd": 0}, {"spend_waiver": {}}):
+            read = Mock()
+            with self.subTest(change=change), self.assertRaisesRegex(LabError, "Unexpected fields"):
+                authorize({**env, "DELIVERY_POLICY": canonical({**bounds, **change}).decode()},
+                          "dev", "promote", digest, read, NOW)
+            read.assert_not_called()
+
     def test_closed_or_spoofed_workflow_fails_before_any_github_or_azure_access(self):
         env, _, _, _, digest = self.auth()
         for key, value in (("LIVE_DELIVERY_ENABLED", "false"), ("GITHUB_EVENT_NAME", "pull_request"),
@@ -365,7 +421,7 @@ class AuthorizationTests(unittest.TestCase):
     def test_changed_image_release_bounds_or_journal_are_not_accepted(self):
         env, bounds, config, read, digest = self.auth()
         for change in ({"expires_at": "2026-11-26T00:00:00Z"}, {"max_operations": 11},
-                       {"release_digests": ["e" * 64]}, {"spend_observed_usd": 30},
+                       {"release_digests": ["e" * 64]}, {"price_checked_at": "2026-11-19T00:00:00Z"},
                        {"estimated_monthly_usd": 501}):
             with self.subTest(change=change), self.assertRaises(LabError):
                 authorize({**env, "DELIVERY_POLICY": canonical({**bounds, **change}).decode()},

@@ -275,6 +275,11 @@ to the retained composite release with before/during/after evidence. Expire
 evidence after one hour. Stop on any unknown charge, unsupported API, missing
 identity, lease loss, content drift or missing evidence. Do not weaken policy.
 
+The separate [ordinary-Prompt native pipeline](native-pipeline.md) now has an
+operator-approved v2 evaluation profile without the $0.05 case cap or aggregate
+observed-spend gate. Its operation reservations, measurements and non-spend
+controls remain; the older probe/smoke profiles retain their own limits.
+
 ## Reset, teardown and live authorization
 
 There is no destructive operator command. Local preparation reuses only the

@@ -57,6 +57,8 @@ jobs:
   dev:
     needs: package
     uses: ./.github/workflows/deliver-environment.yml
+    secrets:
+      DELIVERY_BINDING: ${{ secrets.DELIVERY_BINDING }}
     permissions:
       contents: read
       actions: read
@@ -71,6 +73,8 @@ jobs:
   test:
     needs: [package, dev]
     uses: ./.github/workflows/deliver-environment.yml
+    secrets:
+      DELIVERY_BINDING: ${{ secrets.DELIVERY_BINDING }}
     permissions:
       contents: read
       actions: read
@@ -85,6 +89,8 @@ jobs:
   prod:
     needs: [package, test]
     uses: ./.github/workflows/deliver-environment.yml
+    secrets:
+      DELIVERY_BINDING: ${{ secrets.DELIVERY_BINDING }}
     permissions:
       contents: read
       actions: read

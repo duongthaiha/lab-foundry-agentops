@@ -75,11 +75,17 @@ group names, and `@duongthaiha` for both AI Engineer and Platform Engineer.
 Actual subscription/tenant identifiers and cloud evidence are kept in ignored
 `.lab/` files and must not be published.
 The user approved public endpoints with Entra authentication, isolated environment
-resources and synthetic data only. Approved live limits are **quality >=80%,
+resources and synthetic data only. Initially approved live limits were **quality >=80%,
 unsafe responses 0%, latency <=60 seconds and cost <=$0.05 per case**, evidence
 fresh for one hour, memory retention one day and asynchronous completion within
 five minutes. Missing measurements still reject promotion. These approvals do
 not convert synthetic measurements into live evaluations.
+
+The later [ordinary-Prompt native pipeline](native-pipeline.md) has explicit
+operator approval to remove its aggregate observed-spend check and $0.05 case
+cap. Its v2 contract retains measured usage, the separate operation reservation,
+monthly estimate and all non-spend controls. The older dev-smoke/probe limits
+above are not changed by that scoped update.
 
 Read-only checks on 2026-11-25 observed:
 

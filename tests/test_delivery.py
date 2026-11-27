@@ -100,6 +100,25 @@ class DeliveryTests(unittest.TestCase):
         with self.assertRaisesRegex(LabError, "Unexpected fields"):
             grade(value, "dev", ["p0004"], PRICES, 1, SAFETY)
 
+    def test_native_cost_profile_is_explicit_and_legacy_contract_stays_loadable(self):
+        legacy = release("prompt", "a" * 40, "b" * 64, tool_image_sha256="c" * 64)
+        native = release("prompt", "a" * 40, "b" * 64, tool_image_sha256="c" * 64,
+                         native_pipeline=True)
+        self.assertNotEqual(fingerprint(legacy), fingerprint(native))
+        self.assertIsNone(native["evaluation"]["max_case_usd"])
+        with tempfile.TemporaryDirectory() as folder:
+            for value in (legacy, native):
+                path, digest = save(value, Path(folder))
+                self.assertEqual(load(path, digest), value)
+        for value, cap in ((legacy, None), (native, 0.05)):
+            changed = copy.deepcopy(value)
+            changed["evaluation"]["max_case_usd"] = cap
+            with self.subTest(cap=cap), self.assertRaisesRegex(LabError, "Evaluation policy drift"):
+                validate(changed)
+        with self.assertRaisesRegex(LabError, "ordinary Prompt"):
+            release("harness", "a" * 40, "b" * 64, tool_image_sha256="c" * 64,
+                    native_pipeline=True)
+
     def test_unpinned_image_is_not_an_artifact(self):
         with self.assertRaisesRegex(LabError, "pinned ACR"):
             release("hosted", "a" * 40, "b" * 64, image="contoso.azurecr.io/lab:latest")
@@ -128,6 +147,12 @@ class DeliveryTests(unittest.TestCase):
                 rates["input_per_million"] = None
             with self.subTest(mutation=mutation), self.assertRaises(LabError):
                 grade(value, "dev", ["p0004"], rates, elapsed, SAFETY)
+
+    def test_legacy_grader_still_enforces_its_case_cap(self):
+        value = observation()
+        value["response"]["usage"]["input_tokens"] = 220_000
+        with self.assertRaisesRegex(LabError, "Case cost upper bound exceeds"):
+            grade(value, "dev", ["p0004"], PRICES, 1, SAFETY)
 
     def test_safety_is_never_fabricated_from_a_successful_response(self):
         for environment in ("dev", "test", "labprod"):

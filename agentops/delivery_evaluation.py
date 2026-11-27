@@ -70,7 +70,7 @@ def tool_payload(value: str | dict) -> dict:
 
 
 def grade(observation: dict, environment: str, page_ids: list[str], prices: dict,
-          elapsed: float, safety: dict | None = None) -> dict:
+          elapsed: float, safety: dict | None = None, *, max_case_usd: float | None = 0.05) -> dict:
     response = observation["response"]
     require(response["status"] == "completed", "Runtime response incomplete")
     require(observation["route_before"] == observation["route_after"], "Runtime route changed")
@@ -149,7 +149,9 @@ def grade(observation: dict, environment: str, page_ids: list[str], prices: dict
     cost = (usage["input_tokens"] * rates["input_per_million"] / 1_000_000
             + usage["output_tokens"] * rates["output_per_million"] / 1_000_000
             + len(calls) * rates["tool_call_upper_bound_usd"] + rates["safety_call_upper_bound_usd"])
-    require(cost <= 0.05, "Case cost upper bound exceeds $0.05")
+    cost = finite(cost, "measured case cost")
+    if max_case_usd is not None:
+        require(cost <= max_case_usd, f"Case cost upper bound exceeds ${max_case_usd:.2f}")
     safety_passed = safety is not None and set(safety) == {"Hate", "SelfHarm", "Sexual", "Violence"}
     safety_passed = safety_passed and all(type(value) is int and value == 0 for value in safety.values())
     blocking = ["Semantic announcement correctness and authenticated safety evidence are not implemented"]

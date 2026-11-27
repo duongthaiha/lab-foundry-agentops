@@ -22,6 +22,14 @@ bindings or model responses. Every stage downloads the same artifact and
 verifies canonical bytes against the same digest. Environment resource IDs,
 endpoints, identities and prices are separately bound by the reviewed policy.
 
+New native bundles use evaluation profile `prompt-native-delivery-v2`, with
+`max_case_usd: null`: there is no per-request or combined-case monetary cap.
+This is a fixed reviewed contract, not an operator waiver. The existing
+quality, safety, latency, token and tool-call limits are unchanged. Legacy
+`two-dependency-v1` bundles remain loadable for the separate probe/smoke paths,
+whose $0.05 controls are unchanged; this native entrypoint refuses to silently
+reinterpret one as the new profile.
+
 The stage sequence is:
 
 1. GitHub environment approval, then live run/branch/protection/policy checks
@@ -148,6 +156,13 @@ Set the following separately in each GitHub environment:
 | `DELIVERY_BINDING` secret | The private JSON configuration below |
 | `DELIVERY_POLICY` variable | Canonical JSON policy binding the executing main SHA, approved release digests, configuration digest and bounds |
 
+Promotion and rollback pass only the named `DELIVERY_BINDING` secret to the
+reusable workflow, which declares it required and selects the target
+environment. This follows the [reusable-workflow secret contract](https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows#using-inputs-and-secrets-in-a-reusable-workflow)
+without broad secret inheritance. Configure the binding in each environment;
+the required declaration checks the caller's wiring, while CLI validation
+rejects an empty or mismatched value before Azure login.
+
 `DELIVERY_BINDING` has four fields:
 
 ```text
@@ -198,29 +213,46 @@ The policy schema is:
   "valid_from": "<UTC timestamp>",
   "expires_at": "<UTC timestamp, no more than seven days later>",
   "price_checked_at": "<UTC timestamp, at most seven days old>",
-  "spend_checked_at": "<UTC timestamp, at most one day old>",
-  "spend_observed_usd": 0,
   "estimated_monthly_usd": 260,
   "max_operations": 10,
   "allow_bootstrap": true
 }
 ```
 
-The amounts are illustrative placeholders, **not observed spend or a quote**.
-Replace them with current reviewed values; budget ingestion can lag. Use a
+The monthly estimate is illustrative, **not observed spend or a quote**.
+Replace it with the reviewed estimate based on current prices. Use a
 different policy ID for each environment/binding and each changed policy.
 The executing revision must be current `main`; an older retained release may
 be explicitly allowlisted for rollback under the current reviewed operator code.
 
-The original **$30 review, $40 stop-new-requests, $500/month** limits have not
-been raised. Admission stops before observed spend plus retained reservations
-reaches $30. Each operation conservatively reserves $0.50, and every model
-request is measured against the $0.05 case limit. Reservations are never
+This native pipeline has **no aggregate observed-spend admission check**.
+`spend_checked_at`, `spend_observed_usd` and spend-waiver metadata are not
+accepted by its strict policy schema. It does not query Cost Management or
+alternative usage APIs and does not infer or fabricate observed spend.
+The former observed-spend-plus-reservations $30 review check is removed; no
+aggregate $30/$40 compliance is claimed.
+
+The independent **$500 monthly estimate** bound and seven-day price freshness
+check remain. This is a reviewed projection, not billing verification or a
+change to the existing Azure budget. The **$0.05 per-request and combined-case
+checks are removed from this native path**. Token usage and current price
+evidence remain mandatory, and their measured upper bounds are still recorded.
+The separate **$0.50 cumulative operation reservation** is still enforced;
+removing the case cap does not remove that operation bound. Reservations and
+measured usage stay in the ledger, including failed attempts, and are never
 reset by changing policy IDs. At most ten pipeline stage/rollback attempts are
-allowed across policies; this is separate from, and does not reset, the older
-smoke's five consumed CI attempts. Eight operations cover A/B/C/rollback below.
+allowed across policies; this is separate from, and does not reset, the retained
+dev-smoke history. Eight operations cover A/B/C/rollback below.
 These checks are not a provider billing hard cap: a charge can occur before
 the client observes an error, and standing resource cost continues while idle.
+
+Review new policies against the updated schema and current `main`; remove
+obsolete spend fields rather than supplying zero or `null`. This code change
+does not open admission or authorize workflow dispatch. Owner approvals,
+release allowlisting, source/configuration binding, CI identity/RBAC, leases,
+evaluation and rollback protections remain mandatory. Prepare release A only
+after the change is merged, using its new main SHA, and keep the separate B
+wording PR unmerged until A is verified serving in labprod.
 
 ## Run promotion and rollback
 

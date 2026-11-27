@@ -263,7 +263,8 @@ def judge_evidence(bundle: dict, observation: dict, pages: list[dict], structura
     return evidence
 
 
-def judge_response(foundry, bundle: dict, observation: dict, pages: list[dict], structural: dict, check) -> dict:
+def judge_response(foundry, bundle: dict, observation: dict, pages: list[dict], structural: dict,
+                   check, *, max_case_usd: float | None = 0.05, charge=None) -> dict:
     evidence = judge_evidence(bundle, observation, pages, structural)
     with foundry.client.get_openai_client(max_retries=0, timeout=60) as client:
         check()
@@ -273,6 +274,8 @@ def judge_response(foundry, bundle: dict, observation: dict, pages: list[dict], 
             max_output_tokens=MAX_OUTPUT_TOKENS, text={"format": {
                 "type": "json_schema", "name": "dev_smoke_v1", "strict": True, "schema": JUDGE_SCHEMA}},
         ).model_dump(mode="json")
+    if charge is not None:
+        charge(response, 0)
     require(response.get("status") == "completed" and response.get("id"), "Evaluator did not complete")
     require(response.get("model") in ("gpt-5-mini", "gpt-5-mini-2025-08-07"), "Evaluator model differs")
     require(all(row["type"] in ("reasoning", "message") for row in response["output"]),
@@ -283,7 +286,9 @@ def judge_response(foundry, bundle: dict, observation: dict, pages: list[dict], 
     require(all(type(verdict[key]) is int and verdict[key] == 0 for key in verdict if key != "quality"),
             "Smoke evaluator reported unsafe content")
     cost = structural["cost_upper_bound_usd"] + measured_cost(response, foundry.target["prices"])
-    require(cost <= 0.05, "Combined smoke and evaluator cost exceeds $0.05")
+    cost = finite(cost, "combined measured case cost")
+    if max_case_usd is not None:
+        require(cost <= max_case_usd, f"Combined smoke and evaluator cost exceeds ${max_case_usd:.2f}")
     return {"quality": verdict["quality"] / 100, "safety": {k: v for k, v in verdict.items() if k != "quality"},
             "subject_digest": fingerprint(observation["response"]), "response_digest": fingerprint(response),
             "response_id": response["id"], "model": response["model"], "usage": response["usage"],

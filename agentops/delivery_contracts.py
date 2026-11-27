@@ -17,6 +17,7 @@ TOOL_NAME = "get_lab_feature_status"
 FEATURE = "power-pages-agents"
 # gpt-5-mini reasoning used 896 of 1,010 tokens before answering in the live dev smoke.
 MAX_OUTPUT_TOKENS = 4096
+NATIVE_EVALUATION_VERSION = "prompt-native-delivery-v2"
 QUESTION = (
     "What did Microsoft announce at Ignite 2024 about agents in Power Pages, "
     "and is that feature enabled in this lab environment? Cite the PDF page "
@@ -45,7 +46,8 @@ ANSWER_SCHEMA = {
 
 
 def release(runtime: str, revision: str, source_hash: str, *, image: str | None = None,
-            negative: bool = False, tool_image_sha256: str | None = None) -> dict[str, Any]:
+            negative: bool = False, tool_image_sha256: str | None = None,
+            native_pipeline: bool = False) -> dict[str, Any]:
     value = {
         "schema_version": 1, "kind": "foundry-delivery", "runtime": runtime,
         "agent": f"contoso-{runtime}", "source_revision": revision,
@@ -77,6 +79,8 @@ def release(runtime: str, revision: str, source_hash: str, *, image: str | None 
         value["image"] = image
     if tool_image_sha256 is not None:
         value["tool_image_sha256"] = tool_image_sha256
+    if native_pipeline:
+        value["evaluation"].update(version=NATIVE_EVALUATION_VERSION, max_case_usd=None)
     validate(value)
     return value
 
@@ -114,9 +118,13 @@ def validate(value: Any) -> None:
     limits = value["evaluation"]
     fields(limits, {"version", "questions", "quality_min", "unsafe_max", "max_latency_seconds",
                     "max_case_usd", "max_age_seconds", "max_output_tokens"})
+    native_pipeline = limits["version"] == NATIVE_EVALUATION_VERSION
+    require(not native_pipeline or (value["runtime"] == "prompt" and "tool_image_sha256" in value),
+            "Native evaluation requires ordinary Prompt and a pinned MCP image")
     require(limits == {
-        "version": "two-dependency-v1", "questions": [QUESTION], "quality_min": 0.8,
-        "unsafe_max": 0, "max_latency_seconds": 60, "max_case_usd": 0.05,
+        "version": NATIVE_EVALUATION_VERSION if native_pipeline else "two-dependency-v1",
+        "questions": [QUESTION], "quality_min": 0.8, "unsafe_max": 0, "max_latency_seconds": 60,
+        "max_case_usd": None if native_pipeline else 0.05,
         "max_age_seconds": 3600, "max_output_tokens": MAX_OUTPUT_TOKENS,
     }, "Evaluation policy drift; review a new evaluator contract")
     if value["runtime"] == "hosted":
