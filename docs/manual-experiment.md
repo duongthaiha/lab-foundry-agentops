@@ -1,6 +1,13 @@
 # Run the dev experiment manually, without teardown
 
-## Current handoff: recovery is required
+## Current handoff: dev infrastructure restored
+
+The dev foundation was restored and read back on 2026-11-27. No smoke agent,
+knowledge index or release connections were created by that restoration.
+**Do not repeat resource recovery or reseed the journal on the restored lab.**
+Sections 1-4 are retained as a disaster-recovery procedure; for the next manual
+smoke, inventory current outputs and continue at section 5. For full promotion
+and rollback, use [the native pipeline](native-pipeline.md) instead.
 
 The live ordinary-Prompt experiment passed in
 [CI run 45912758182](https://github.com/duongthaiha/lab-foundry-agentops/actions/runs/45912758182)
@@ -8,12 +15,12 @@ on 2026-11-26: both authenticated MCP dependencies, a real IQ citation, and the
 response-bound judge passed. This is not dev-to-test/prod promotion evidence.
 
 **The subsequent teardown was halted, but its resource-deletion commands had
-finished before the halt reached the deployment session.** At the 2026-11-27
-handoff the dev resource group contained zero resources. The Foundry account
-was also purged. There is no running agent or old endpoint to open now.
+finished before the halt reached the deployment session.** At the earlier
+post-teardown handoff the dev resource group contained zero resources and the
+Foundry account was purged. That historical state is no longer current.
 The Entra CI and MCP apps, custom connection-writer role, resource group/tags,
 deployment history and private evidence were preserved. The 3 December scheduled
-teardown was cancelled. No reconstruction was run while writing this guide.
+teardown was cancelled. Reconstruction was subsequently authorized and completed.
 
 The workflow is disabled and `LIVE_DEV_SMOKE_ENABLED=false`. Its saved binding
 is **stale**. Do not just enable the old workflow: the MCP hostname, project
@@ -23,14 +30,14 @@ There are two manual experiences:
 
 | Experience | What to do |
 |---|---|
-| Live graded repeat | Restore the dev foundation once, then manually dispatch **Bounded unattended dev smoke** from GitHub or PowerShell. The job creates the agent/KB/connections, grades one case, and leaves them in place. |
+| Live graded repeat | Refresh the restored dev binding/policy, then manually dispatch **Bounded unattended dev smoke** from GitHub or PowerShell. The job creates the agent/KB/connections, grades one case, and leaves them in place. |
 | Interactive experimentation | After that run, open its existing agent in Foundry Playground and send prompts yourself. These extra calls are operator experiments, not new graded CI receipts. |
 
 The supported `agentops.delivery_dev run` CLI is **CI-only**. Setting
 `GITHUB_ACTIONS=true` locally or using the old session-only `rehearse.py` is not
 the supported repeat path: that rehearsal used an in-memory journal and stale
-hard-coded endpoints. General `probe`, `verify-serving` and promotion remain
-closed. Do not relax their gates.
+hard-coded endpoints. General `probe` and `verify-serving` remain closed.
+The new native pipeline has separate authorization; do not relax either gate.
 
 ## 1. Open PowerShell 7 and select the existing lab
 

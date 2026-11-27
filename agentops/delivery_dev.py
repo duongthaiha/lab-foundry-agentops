@@ -110,14 +110,15 @@ def authorize(environ: dict, read=gh, now: datetime | None = None) -> tuple[dict
     return policy, binding
 
 
-def validate_binding(binding: dict) -> dict:
+def validate_binding(binding: dict, environment: str = "dev") -> dict:
     fields(binding, {"target", "tenant_id", "subscription_id", "client_id", "search_resource_id",
                      "storage_resource_id", "tool_resource_id", "tool_image"})
     for key in ("tenant_id", "subscription_id", "client_id"):
         require(re.fullmatch(GUID, binding[key]) is not None, "Invalid private identity binding")
     target = binding["target"]
-    validate_target(target, "dev")
-    prefix = f"/subscriptions/{binding['subscription_id']}/resourceGroups/foudnry-agentops-lab-dev/providers/"
+    validate_target(target, environment)
+    suffix = "prod" if environment == "labprod" else environment
+    prefix = f"/subscriptions/{binding['subscription_id']}/resourceGroups/foudnry-agentops-lab-{suffix}/providers/"
     require(target["project_resource_id"].startswith(prefix), "Project is outside approved dev subscription")
     for key, provider in (("search_resource_id", "Microsoft.Search/searchServices"),
                           ("storage_resource_id", "Microsoft.Storage/storageAccounts"),
@@ -176,7 +177,7 @@ def verify_ci_identity(credential, binding: dict) -> None:
             and "scp" not in claims, "Only the reviewed application identity may execute dev smoke")
 
 
-def inspect_dev(foundry, binding: dict) -> str:
+def inspect_environment(foundry, binding: dict, environment: str) -> str:
     """Read existing resources; never repair auth, policy, roles or capacity."""
     target = binding["target"]
     project_id = target["project_resource_id"]
@@ -234,9 +235,13 @@ def inspect_dev(foundry, binding: dict) -> str:
     require(variables.get("AZURE_TENANT_ID") == binding["tenant_id"]
             and variables.get("MCP_AUDIENCE") == target["tool_audience"]
             and variables.get("MCP_ALLOWED_CALLER_IDS") == principal
-            and containers[0].get("args") == ["--environment", "dev"]
+            and containers[0].get("args") == ["--environment", environment]
             and not containers[0].get("command"), "MCP authentication, caller or environment differs")
     return fingerprint({"principal_id": principal})
+
+
+def inspect_dev(foundry, binding: dict) -> str:
+    return inspect_environment(foundry, binding, "dev")
 
 
 def measured_cost(response: dict, prices: dict) -> float:

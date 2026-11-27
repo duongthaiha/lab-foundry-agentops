@@ -37,6 +37,8 @@ jobs:
           az bicep build --file infra/registry.bicep --outfile ci-demo/registry-template.json
           az bicep build --file infra/monitoring.bicep --outfile ci-demo/monitoring-template.json
           az bicep build --file infra/tracing-access.bicep --outfile ci-demo/tracing-access-template.json
+          az bicep build --file infra/dev-pilot.bicep --outfile ci-demo/pilot-template.json
+          az bicep build --file infra/dev-pilot-mcp.bicep --outfile ci-demo/pilot-mcp-template.json
       - name: Build containers and check non-root imports without runtime credentials
         if: matrix.os == 'ubuntu-latest' && matrix.python == '3.13'
         run: |

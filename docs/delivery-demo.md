@@ -1,5 +1,12 @@
 # Three-track delivery demo: implemented milestone and remaining gates
 
+**Ordinary-Prompt update:** [the native pipeline](native-pipeline.md) now wires
+the controller, authenticated context inspection, model grading, upstream
+readback and rollback into protected GitHub workflows. Its complete sequence
+has service-fixture coverage, not three-environment Azure evidence. The older
+three-runtime probe gate and hosted/harness/memory gaps described below remain.
+Dev infrastructure is restored; do not reprovision it from stale recovery notes.
+
 **This is not a completed live demo.** The new operator prepares real portable
 intent and checks current controls. Full multi-environment delivery is not
 Azure-validated. `probe` and `verify-serving` deliberately cannot execute, even if platform gates are
@@ -10,7 +17,7 @@ The separate [dev-only unattended smoke](dev-smoke.md) is now implemented,
 including an authenticated, response-bound model judge, and passed a live CI
 case on 2026-11-26. It does not use or weaken these full-delivery gates and does
 not resolve the nine-cell native-promotion acceptance criteria. Its foundation
-now needs recovery; see [manual operation without teardown](manual-experiment.md).
+is restored; see [manual operation without teardown](manual-experiment.md).
 
 `verify-serving` is now wired to the native consumer diagnostic, not to
 promotion or grading. Its CLI accepts `--bundle`, `--digest`, `--target`,
@@ -22,7 +29,8 @@ journal lease, without creating an agent version or changing its selector.
 It explicitly reports `release_validated=false` and `full_gate_passed=false`:
 the provided bundle supplies the diagnostic question and operation correlation,
 not proof that its release is serving. A successful diagnostic cannot create a
-candidate or promotion receipt. Remaining lifecycle commands are not wired.
+candidate or promotion receipt. That legacy CLI does not expose the new
+ordinary-Prompt lifecycle commands; use `agentops.delivery_pipeline`.
 
 ## Run the usable milestone
 
@@ -178,10 +186,10 @@ unrelated serving versions, and restores a retained previous promotion receipt
 when available. These checks coordinate participating writers; they are not a
 service-side compare-and-swap guarantee against portal or administrator changes.
 
-The full delivery lifecycle remains library primitives with mocked-service contract
-coverage, **not an enabled live operator**. Only the serving diagnostic is wired
-to its protected CLI command. Integration must supply authenticated context inspection,
-grading and upstream observation. Consumer requests also have offline coverage
+For Hosted and harness, the full delivery lifecycle remains library primitives
+with mocked-service coverage, **not an enabled live operator**. Ordinary Prompt
+now has the separate protected pipeline, supplying authenticated context
+inspection, grading and upstream observation. Consumer requests also have offline coverage
 through the actual Projects/OpenAI SDK authentication and HTTP serialization
 pipeline, but have **not** been executed against Foundry. Include all baseline,
 candidate, serving and rollback calls in the pending total-cost preflight.

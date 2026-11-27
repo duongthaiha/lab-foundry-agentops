@@ -1,6 +1,12 @@
 # Live execution, cost and teardown gates
 
-**Current state: no live deployment; reviewer control temporarily deferred.**
+**Current update:** dev infrastructure has been restored following the successful
+dev smoke. The [ordinary-Prompt native pipeline](native-pipeline.md) is
+implemented but has not run across live dev/test/prod. All-environment reviewer
+restoration and fresh native-delivery policies are still required. The
+historical preflight/bootstrap notes below are not a current resource inventory.
+
+**Historical bootstrap state: no live deployment; reviewer control temporarily deferred.**
 The reviewed design now permits a separate [dev-only unattended prompt smoke](dev-smoke.md)
 without a reviewer per run, but its foundation/identity/cost authorization and
 enablement have not occurred. This exception does not open platform, test,

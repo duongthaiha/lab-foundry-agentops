@@ -1,5 +1,8 @@
 targetScope = 'resourceGroup'
 
+@allowed(['dev', 'test', 'labprod'])
+param environment string = 'dev'
+
 @allowed(['swedencentral'])
 param location string = 'swedencentral'
 
@@ -12,7 +15,8 @@ param audience string
 @description('Current Foundry PROJECT managed-identity object ID, not the CI service principal.')
 param allowedCaller string
 
-var prefix = 'foudnry-agentops-lab-dev'
+var suffix = environment == 'labprod' ? 'prod' : environment
+var prefix = 'foudnry-agentops-lab-${suffix}'
 
 resource uami 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' existing = {
   name: '${prefix}-mcp-id'
@@ -27,9 +31,9 @@ resource app 'Microsoft.App/containerApps@2025-01-01' = {
   location: location
   tags: {
     workload: 'agentops-lab'
-    environment: 'dev'
+    environment: environment
     dataClassification: 'synthetic'
-    pilot: 'dev-smoke-v1'
+    pilot: environment == 'dev' ? 'dev-smoke-v1' : 'prompt-delivery-v1'
     SecurityControl: 'Ignore'
   }
   identity: {
@@ -47,14 +51,14 @@ resource app 'Microsoft.App/containerApps@2025-01-01' = {
         transport: 'http'
         allowInsecure: false
       }
-      registries: [{ server: 'cragentopslabdev.azurecr.io', identity: uami.id }]
+      registries: [{ server: 'cragentopslab${suffix}.azurecr.io', identity: uami.id }]
     }
     template: {
       containers: [
         {
           name: 'lab-tools'
           image: image
-          args: ['--environment', 'dev']
+          args: ['--environment', environment]
           env: [
             { name: 'AZURE_TENANT_ID', value: tenantId }
             { name: 'MCP_AUDIENCE', value: audience }

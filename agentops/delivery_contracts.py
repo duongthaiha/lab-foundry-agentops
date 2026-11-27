@@ -45,7 +45,7 @@ ANSWER_SCHEMA = {
 
 
 def release(runtime: str, revision: str, source_hash: str, *, image: str | None = None,
-            negative: bool = False) -> dict[str, Any]:
+            negative: bool = False, tool_image_sha256: str | None = None) -> dict[str, Any]:
     value = {
         "schema_version": 1, "kind": "foundry-delivery", "runtime": runtime,
         "agent": f"contoso-{runtime}", "source_revision": revision,
@@ -75,6 +75,8 @@ def release(runtime: str, revision: str, source_hash: str, *, image: str | None 
     }
     if runtime == "hosted":
         value["image"] = image
+    if tool_image_sha256 is not None:
+        value["tool_image_sha256"] = tool_image_sha256
     validate(value)
     return value
 
@@ -83,7 +85,7 @@ def validate(value: Any) -> None:
     fields(value, {
         "schema_version", "kind", "runtime", "agent", "source_revision", "model",
         "source", "instructions", "tool", "answer_schema_sha256", "evaluation", "memory", "negative_control",
-    }, {"image"})
+    }, {"image", "tool_image_sha256"})
     require(value["schema_version"] == 1 and value["kind"] == "foundry-delivery",
             "Not a real-delivery release contract")
     require(value["runtime"] in RUNTIMES, "Unknown runtime")
@@ -100,6 +102,8 @@ def validate(value: Any) -> None:
     require(value["tool"] == {
         "name": TOOL_NAME, "input_schema": TOOL_SCHEMA, "backend": "deterministic-lab-fixture",
     }, "Unexpected tool contract")
+    if "tool_image_sha256" in value:
+        digest_value(value["tool_image_sha256"], "MCP image hash")
     # The schema names an "environment" answer field, which portable releases forbid, so bind its hash.
     require(value["answer_schema_sha256"] == fingerprint(ANSWER_SCHEMA),
             "Answer schema drift; review a new grader contract")

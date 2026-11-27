@@ -103,7 +103,7 @@ def validate_target(target: dict, environment: str):
             "Exact Entra tool audience required")
 
 
-def connections(foundry, digest: str, knowledge: dict) -> list[dict]:
+def connections(foundry, digest: str, knowledge: dict, *, create: bool = True) -> list[dict]:
     digest_value(digest, "release digest")
     target = foundry.target
     kb_url = target["search_endpoint"] + f"/knowledgebases/{knowledge['kb']}/mcp?api-version={MCP_API}"
@@ -122,7 +122,11 @@ def connections(foundry, digest: str, knowledge: dict) -> list[dict]:
         # identity and target RBAC, so this field is not part of the read-back contract.
         expected = {"properties": {key: value for key, value in desired["properties"].items()
                                    if key != "isSharedToAll"}}
-        ensure(foundry.arm, path, desired, expected)
+        if create:
+            ensure(foundry.arm, path, desired, expected)
+        else:
+            actual = foundry.arm.request("GET", path)
+            require(project_shape(actual, expected) == expected, "Retained connection binding drift")
         # The service stores allowed_tools as this filter object; sending it keeps read-back exact.
         tools.append({"type": "mcp", "server_label": label, "server_url": url,
                       "allowed_tools": {"tool_names": [name]}, "require_approval": "never",
@@ -222,6 +226,12 @@ def matrix() -> dict:
         } for runtime in RUNTIMES},
         "cells": [{"runtime": runtime, "environment": environment, "live_status": "not-run"}
                   for runtime in RUNTIMES for environment in ENVIRONMENTS],
+        "prompt_pipeline": {
+            "entrypoint": "agentops.delivery_pipeline", "implemented": True, "live_validation": False,
+            "workflow": "promote.yml", "rollback_workflow": "rollback.yml",
+            "environments": list(ENVIRONMENTS),
+            "boundary": "Protected ordinary-Prompt path; not hosted/harness or the legacy probe gate.",
+        },
         "boundary": "Dependency probes do not satisfy the native-serving acceptance criterion.",
     }
 

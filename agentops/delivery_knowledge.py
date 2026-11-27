@@ -111,11 +111,24 @@ def materialize(foundry, source_hash: str, pages: list[dict]) -> dict:
             "index": index["name"], "kb": desired["kb"]["name"], "source": desired["source"]["name"]}
 
 
-def verify_knowledge(foundry, evidence: dict, pages: list[dict]):
+def verify_knowledge(foundry, evidence: dict, pages: list[dict] | None = None):
     desired = desired_knowledge(evidence["source_hash"])
     for key, collection in (("index", "indexes"), ("source", "knowledgesources"), ("kb", "knowledgebases")):
         observed = foundry.search.request(
             "GET", f"/{collection}/{desired[key]['name']}?api-version={SEARCH_API}")
         require(project_shape(observed, desired[key]) == desired[key], "Knowledge configuration drift")
-    require(content_readback(foundry.search, evidence["index"], pages) == evidence["content_watermark"],
-            "Knowledge watermark drift")
+    if pages is not None:
+        watermark = content_readback(foundry.search, evidence["index"], pages)
+    else:
+        # Rollback verifies retained indexed bytes, not today's bytes at a mutable publisher URL.
+        keys = ("page_id", "page_number", "content", "source_url", "title")
+        result = foundry.search.request("POST", f"/indexes/{evidence['index']}/docs/search?api-version={SEARCH_API}", {
+            "search": "*", "select": ",".join(keys), "top": 1000, "count": True,
+        })
+        observed = sorted([{key: row[key] for key in keys} for row in result["value"]],
+                          key=lambda row: row["page_id"])
+        require(result["@odata.count"] == len(evidence["page_ids"])
+                and [row["page_id"] for row in observed] == evidence["page_ids"],
+                "Retained indexed page set differs")
+        watermark = fingerprint(observed)
+    require(watermark == evidence["content_watermark"], "Knowledge watermark drift")

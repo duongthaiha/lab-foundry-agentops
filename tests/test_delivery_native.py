@@ -2,7 +2,7 @@ import copy
 import unittest
 from contextlib import contextmanager
 from types import SimpleNamespace
-from unittest.mock import MagicMock, Mock
+from unittest.mock import MagicMock, Mock, patch
 
 import httpx2 as httpx
 from azure.ai.projects import AIProjectClient
@@ -141,6 +141,19 @@ class NativeDeliveryTests(unittest.TestCase):
             details["instance_identity"] = identity
             with self.subTest(identity=identity), self.assertRaises(LabError):
                 world.runtime.snapshot("contoso-prompt")
+
+    def test_candidate_waits_for_activation_without_recreating_or_moving_serving(self):
+        world, journal, delivery, bundle, digest, definition = self.setup_delivery()
+        def creating(name, body, **kwargs):
+            value = world.create(name, body, **kwargs).as_dict()
+            return model({**value, "status": "creating"})
+        world.agents.create_version.side_effect = creating
+        with patch("agentops.delivery_native.time.sleep"):
+            candidate = delivery.evaluate(bundle, digest, definition, lambda item: {"full_gate_passed": True})
+        self.assertTrue(candidate["passed"])
+        world.agents.create_version.assert_called_once()
+        world.agents.update_details.assert_not_called()
+        self.assertEqual(world.serving, "1")
 
     def test_failed_consumer_check_retains_rollback_intent_before_mutation(self):
         world, journal, delivery, bundle, digest, definition = self.setup_delivery()
