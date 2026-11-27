@@ -265,10 +265,14 @@ are deleted, and the rollback does not roll back mutable user memory.
 ## Failure and pause behavior
 
 An ordinary grading rejection is terminal and leaves serving unchanged.
-A timeout, partial creation, selector uncertainty or failed consumer check is
-`reconcile-required`, not a successful release. The shared lease plus CAS guards
-participating writers. It cannot prevent a portal administrator changing native
-serving concurrently; such drift is rejected, not silently repaired.
+A failure before the first target mutation is recorded as
+`failed-before-mutation`; it consumes the operation allowance but does not block
+a new authorized attempt. A timeout, partial creation, selector uncertainty or
+failed consumer check after that boundary is `reconcile-required`, not a
+successful release. Do not retry or clear the ledger in that state; inspect and
+reconcile the target and journal before proceeding. The shared lease plus CAS
+guards participating writers. It cannot prevent a portal administrator changing
+native serving concurrently; such drift is rejected, not silently repaired.
 
 An uncertain cutover can be recovered by the exact retained rollback operation.
 It records recovery on the failed attempt without replaying the deployment.

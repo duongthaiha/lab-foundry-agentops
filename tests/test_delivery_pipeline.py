@@ -252,6 +252,21 @@ class PipelineTests(unittest.TestCase):
             self.run_stage("dev", self.bundles[0], reauthorize=Mock(side_effect=LabError("revoked")))
         self.worlds["dev"].agents.create_version.assert_not_called()
 
+    def test_source_loading_failure_is_terminal_before_target_mutation(self):
+        source = Mock(side_effect=LabError("publisher unavailable"))
+        with self.assertRaisesRegex(LabError, "publisher unavailable"):
+            self.run_stage("dev", self.bundles[0], source_loader=source)
+
+        attempt = next(iter(self.journal.state["delivery_pipeline"]["attempts"].values()))
+        self.assertEqual(attempt["status"], "failed-before-mutation")
+        self.assertFalse(attempt["mutation_started"])
+        self.worlds["dev"].agents.create_version.assert_not_called()
+        self.assertEqual(self.worlds["dev"].documents, {})
+
+        result = self.run_stage("dev", self.bundles[0])
+        self.assertEqual(result["status"], "promoted")
+        self.assertEqual(len(self.journal.state["delivery_pipeline"]["attempts"]), 2)
+
 
 class AuthorizationTests(unittest.TestCase):
     def auth(self, environment="dev", action="promote", mutate=None):

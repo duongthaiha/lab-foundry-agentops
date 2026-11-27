@@ -27,7 +27,7 @@ from .delivery_native import NativeDelivery, NativeRuntime
 
 WORKFLOWS = {"promote": "promote.yml", "rollback": "rollback.yml"}
 RESERVATION_USD = 0.50
-SETTLED = {"promoted", "rejected", "rolled-back"}
+SETTLED = {"promoted", "rejected", "rolled-back", "failed-before-mutation"}
 BASELINE = {
     "kind": "prompt", "model": "gpt-5-mini", "tools": [], "tool_choice": "none",
     "instructions": "No evaluated release has been promoted. Reply only: AgentOps lab is not ready.",
@@ -290,9 +290,11 @@ def execute(foundry, journal, policy: dict, config: dict, bundle: dict, digest: 
         attempt = {"status": "reserved", "environment": environment, "action": action,
                    "release_digest": digest, "binding_digest": fingerprint(config),
                    "reserved_usd": RESERVATION_USD, "measured_upper_bound_usd": 0,
-                   "started_at": utc_now(), "run_key": run_key, "full_gate_passed": False}
+                   "started_at": utc_now(), "run_key": run_key, "full_gate_passed": False,
+                   "mutation_started": False}
         attempts[run_key] = attempt
         view.save(state)
+        mutation_started = False
 
         def charge(response, tool_calls):
             cost = measured_cost(response, foundry.target["prices"])
@@ -336,6 +338,9 @@ def execute(foundry, journal, policy: dict, config: dict, bundle: dict, digest: 
                     view.save(state)
                     return attempt
                 pages = source_loader(bundle["source"]["sha256"])
+                mutation_started = True
+                attempt.update({"mutation_started": True, "phase": "materializing"})
+                view.save(state)
                 knowledge = materialize(foundry, bundle["source"]["sha256"], pages)
                 tools = connections(foundry, digest, knowledge)
                 desired = definition(bundle, tools, foundry.target)
@@ -366,7 +371,8 @@ def execute(foundry, journal, policy: dict, config: dict, bundle: dict, digest: 
             view.save(state)
             return attempt
         except Exception as exc:
-            attempt.update({"status": "reconcile-required", "error_type": type(exc).__name__})
+            attempt.update({"status": "reconcile-required" if mutation_started else "failed-before-mutation",
+                            "error_type": type(exc).__name__, "completed_at": utc_now()})
             if isinstance(exc, LabError):
                 attempt["reason"] = str(exc)[:300]
             view.save(state)
