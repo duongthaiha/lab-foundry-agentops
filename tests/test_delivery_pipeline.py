@@ -267,6 +267,41 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(result["status"], "promoted")
         self.assertEqual(len(self.journal.state["delivery_pipeline"]["attempts"]), 2)
 
+    def test_verified_pre_cutover_failure_does_not_deadlock_pipeline(self):
+        with patch("agentops.delivery_pipeline.materialize", side_effect=LabError("partial materialization")):
+            with self.assertRaisesRegex(LabError, "partial materialization"):
+                self.run_stage("dev", self.bundles[0])
+
+        attempt = next(iter(self.journal.state["delivery_pipeline"]["attempts"].values()))
+        self.assertEqual(attempt["status"], "failed-before-cutover")
+        self.assertTrue(attempt["mutation_started"])
+        self.assertTrue(attempt["verified_serving_unchanged"])
+        self.assertFalse(self.worlds["dev"].exists)
+
+        result = self.run_stage("dev", self.bundles[0])
+        self.assertEqual(result["status"], "promoted")
+
+    def test_uncertain_rollback_can_be_retried_after_cutover_effect(self):
+        self.run_stage("dev", self.bundles[0])
+        self.run_stage("dev", self.bundles[1])
+        world = self.worlds["dev"]
+
+        def timeout_after_effect(name, body):
+            world.update(name, body)
+            raise TimeoutError("synthetic lost rollback response")
+
+        world.agents.update_details.side_effect = timeout_after_effect
+        with self.assertRaisesRegex(TimeoutError, "lost rollback response"):
+            self.run_stage("dev", self.bundles[1], "rollback")
+        world.agents.update_details.side_effect = world.update
+        created = world.agents.create_version.call_count
+
+        retried = self.run_stage("dev", self.bundles[1], "rollback")
+        self.assertEqual((retried["status"], world.serving), ("rolled-back", "2"))
+        self.assertEqual(world.agents.create_version.call_count, created)
+        self.assertTrue(all(row["status"] in ("promoted", "rolled-back")
+                            for row in self.journal.state["delivery_pipeline"]["attempts"].values()))
+
 
 class AuthorizationTests(unittest.TestCase):
     def auth(self, environment="dev", action="promote", mutate=None):

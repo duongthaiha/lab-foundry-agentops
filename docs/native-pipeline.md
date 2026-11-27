@@ -265,17 +265,23 @@ are deleted, and the rollback does not roll back mutable user memory.
 ## Failure and pause behavior
 
 An ordinary grading rejection is terminal and leaves serving unchanged.
-A failure before the first target mutation is recorded as
-`failed-before-mutation`; it consumes the operation allowance but does not block
-a new authorized attempt. A timeout, partial creation, selector uncertainty or
-failed consumer check after that boundary is `reconcile-required`, not a
-successful release. Do not retry or clear the ledger in that state; inspect and
-reconcile the target and journal before proceeding. The shared lease plus CAS
-guards participating writers. It cannot prevent a portal administrator changing
-native serving concurrently; such drift is rejected, not silently repaired.
+Failures before the first target mutation are recorded as
+`failed-before-mutation`. After idempotent dependency/candidate work starts, a
+failed promotion is recorded as `failed-before-cutover` only after a fresh
+readback confirms the serving selector is unchanged and no retained cutover
+intent exists. Both outcomes consume the operation allowance and allow a new,
+approved attempt; immutable partial dependencies are verified and reused.
 
-An uncertain cutover can be recovered by the exact retained rollback operation.
-It records recovery on the failed attempt without replaying the deployment.
+A timeout, partial creation with unverified serving state, selector uncertainty
+or failed consumer check after retained cutover intent is `reconcile-required`,
+not a successful release. Do not promote again or clear the ledger in that
+state. Recover an uncertain promotion by the exact retained rollback. An
+uncertain rollback can be retried only for the same environment and current
+release digest; it verifies the retained versions and current selector and
+avoids repeating a completed cutover. The shared lease plus CAS guards
+participating writers. It cannot prevent a portal administrator changing native
+serving concurrently; such drift is rejected, not silently repaired.
+
 Other uncertain operations need operator inspection/reconciliation; never clear
 the ledger or create a new policy ID to retry them. A successful stage rerun
 verifies the existing serving receipt instead of creating another version.
